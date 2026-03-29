@@ -1,0 +1,9 @@
+aiohttp
+anthropic
+numpy
+pandas
+plotly
+python-dotenv
+streamlit
+streamlit-autorefresh
+web3
