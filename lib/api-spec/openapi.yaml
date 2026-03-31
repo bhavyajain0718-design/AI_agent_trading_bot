@@ -1,0 +1,536 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: AI Trading Bot Web3 API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: trades
+    description: Trade management and on-chain settlement
+  - name: portfolio
+    description: Portfolio and P&L tracking
+  - name: agent
+    description: AI agent decisions and strategy
+  - name: chain
+    description: On-chain (Web3) smart contract interactions
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /trades:
+    get:
+      operationId: listTrades
+      tags: [trades]
+      summary: List all trades
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: symbol
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: List of trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trade"
+    post:
+      operationId: createTrade
+      tags: [trades]
+      summary: Record a new trade
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTradeBody"
+      responses:
+        "201":
+          description: Trade created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trade"
+        "400":
+          description: Invalid request
+
+  /trades/{id}:
+    get:
+      operationId: getTrade
+      tags: [trades]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Trade detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trade"
+        "404":
+          description: Not found
+
+  /trades/{id}/settle:
+    post:
+      operationId: settleTrade
+      tags: [trades]
+      summary: Settle trade on-chain via smart contract
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettleTradeBody"
+      responses:
+        "200":
+          description: Trade settled on-chain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trade"
+        "400":
+          description: Invalid request
+        "404":
+          description: Trade not found
+
+  /portfolio/summary:
+    get:
+      operationId: getPortfolioSummary
+      tags: [portfolio]
+      summary: Get portfolio summary stats
+      responses:
+        "200":
+          description: Portfolio summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioSummary"
+
+  /portfolio/pnl:
+    get:
+      operationId: getPnlHistory
+      tags: [portfolio]
+      summary: Get P&L history over time
+      responses:
+        "200":
+          description: P&L history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PnlDataPoint"
+
+  /agent/decisions:
+    get:
+      operationId: listAgentDecisions
+      tags: [agent]
+      summary: List recent AI agent decisions
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Agent decisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentDecision"
+    post:
+      operationId: createAgentDecision
+      tags: [agent]
+      summary: Record an AI agent decision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentDecisionBody"
+      responses:
+        "201":
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDecision"
+
+  /agent/status:
+    get:
+      operationId: getAgentStatus
+      tags: [agent]
+      summary: Get current agent operational status
+      responses:
+        "200":
+          description: Agent status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentStatus"
+
+  /chain/status:
+    get:
+      operationId: getChainStatus
+      tags: [chain]
+      summary: Get Web3/blockchain connection status and contract info
+      responses:
+        "200":
+          description: Chain status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChainStatus"
+
+  /chain/on-chain-pnl:
+    get:
+      operationId: getOnChainPnl
+      tags: [chain]
+      summary: Fetch total P&L recorded on the smart contract
+      responses:
+        "200":
+          description: On-chain P&L
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnChainPnl"
+
+  /chain/on-chain-trades:
+    get:
+      operationId: listOnChainTrades
+      tags: [chain]
+      summary: List trades recorded on the smart contract
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: On-chain trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OnChainTrade"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Trade:
+      type: object
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [buy, sell]
+        price:
+          type: string
+        quantity:
+          type: string
+        pnl:
+          type: ["string", "null"]
+        strategy:
+          type: string
+        confidence:
+          type: ["number", "null"]
+        status:
+          type: string
+          enum: [pending, open, closed, settled]
+        chainTxHash:
+          type: ["string", "null"]
+        chainSettledAt:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - symbol
+        - side
+        - price
+        - quantity
+        - strategy
+        - status
+        - createdAt
+        - updatedAt
+
+    CreateTradeBody:
+      type: object
+      properties:
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [buy, sell]
+        price:
+          type: string
+        quantity:
+          type: string
+        strategy:
+          type: string
+        confidence:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+      required:
+        - symbol
+        - side
+        - price
+        - quantity
+        - strategy
+
+    SettleTradeBody:
+      type: object
+      properties:
+        pnl:
+          type: string
+        chainTxHash:
+          type: string
+        walletAddress:
+          type: string
+      required:
+        - pnl
+        - walletAddress
+
+    PortfolioSummary:
+      type: object
+      properties:
+        totalValue:
+          type: string
+        totalPnl:
+          type: string
+        winRate:
+          type: number
+        totalTrades:
+          type: integer
+        openTrades:
+          type: integer
+        settledTrades:
+          type: integer
+        onChainSettled:
+          type: integer
+        topSymbol:
+          type: ["string", "null"]
+      required:
+        - totalValue
+        - totalPnl
+        - winRate
+        - totalTrades
+        - openTrades
+        - settledTrades
+        - onChainSettled
+
+    PnlDataPoint:
+      type: object
+      properties:
+        date:
+          type: string
+        pnl:
+          type: number
+        cumulative:
+          type: number
+      required:
+        - date
+        - pnl
+        - cumulative
+
+    AgentDecision:
+      type: object
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        action:
+          type: string
+          enum: [buy, sell, watch, hold]
+        confidence:
+          type: number
+        price:
+          type: string
+        reasoning:
+          type: string
+        indicators:
+          type: string
+        strategy:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - symbol
+        - action
+        - confidence
+        - price
+        - reasoning
+        - indicators
+        - strategy
+        - createdAt
+
+    CreateAgentDecisionBody:
+      type: object
+      properties:
+        symbol:
+          type: string
+        action:
+          type: string
+          enum: [buy, sell, watch, hold]
+        confidence:
+          type: number
+        price:
+          type: string
+        reasoning:
+          type: string
+        indicators:
+          type: string
+        strategy:
+          type: string
+      required:
+        - symbol
+        - action
+        - confidence
+        - price
+        - reasoning
+        - indicators
+        - strategy
+
+    AgentStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [running, stopped, paused]
+        strategy:
+          type: string
+        uptime:
+          type: integer
+        krakenConnected:
+          type: boolean
+        web3Connected:
+          type: boolean
+        contractAddress:
+          type: ["string", "null"]
+        network:
+          type: string
+      required:
+        - status
+        - strategy
+        - uptime
+        - krakenConnected
+        - web3Connected
+        - network
+
+    ChainStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        network:
+          type: string
+        contractAddress:
+          type: ["string", "null"]
+        contractDeployed:
+          type: boolean
+        rpcUrl:
+          type: string
+        totalOnChainTrades:
+          type: integer
+        totalOnChainPnl:
+          type: string
+      required:
+        - connected
+        - network
+        - contractDeployed
+        - rpcUrl
+        - totalOnChainTrades
+        - totalOnChainPnl
+
+    OnChainPnl:
+      type: object
+      properties:
+        totalPnl:
+          type: string
+        totalTrades:
+          type: integer
+        lastUpdated:
+          type: ["string", "null"]
+      required:
+        - totalPnl
+        - totalTrades
+
+    OnChainTrade:
+      type: object
+      properties:
+        tradeId:
+          type: integer
+        symbol:
+          type: string
+        side:
+          type: string
+        price:
+          type: string
+        pnl:
+          type: string
+        txHash:
+          type: string
+        timestamp:
+          type: string
+      required:
+        - tradeId
+        - symbol
+        - side
+        - price
+        - pnl
+        - txHash
+        - timestamp

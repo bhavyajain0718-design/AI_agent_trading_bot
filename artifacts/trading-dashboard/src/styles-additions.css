@@ -1,0 +1,7 @@
+/* Added animation keys for ticker */
+@layer utilities {
+  @keyframes ticker {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+}
