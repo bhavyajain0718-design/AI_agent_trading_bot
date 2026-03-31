@@ -43,6 +43,11 @@ type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
+type QueryOptionsInput<TQueryFnData, TError, TData> = Omit<
+  UseQueryOptions<TQueryFnData, TError, TData>,
+  "queryKey" | "queryFn"
+>;
+
 /**
  * Returns server health status
  * @summary Health check
@@ -68,7 +73,7 @@ export const getHealthCheckQueryOptions = <
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
@@ -103,7 +108,7 @@ export function useHealthCheck<
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
@@ -158,7 +163,7 @@ export const getListTradesQueryOptions = <
 >(
   params?: ListTradesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof listTrades>>,
       TError,
       TData
@@ -196,7 +201,7 @@ export function useListTrades<
 >(
   params?: ListTradesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof listTrades>>,
       TError,
       TData
@@ -323,7 +328,7 @@ export const getGetTradeQueryOptions = <
 >(
   id: number,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof getTrade>>,
       TError,
       TData
@@ -360,7 +365,7 @@ export function useGetTrade<
 >(
   id: number,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof getTrade>>,
       TError,
       TData
@@ -488,7 +493,7 @@ export const getGetPortfolioSummaryQueryOptions = <
   TData = Awaited<ReturnType<typeof getPortfolioSummary>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof getPortfolioSummary>>,
     TError,
     TData
@@ -523,7 +528,7 @@ export function useGetPortfolioSummary<
   TData = Awaited<ReturnType<typeof getPortfolioSummary>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof getPortfolioSummary>>,
     TError,
     TData
@@ -563,7 +568,7 @@ export const getGetPnlHistoryQueryOptions = <
   TData = Awaited<ReturnType<typeof getPnlHistory>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof getPnlHistory>>,
     TError,
     TData
@@ -598,7 +603,7 @@ export function useGetPnlHistory<
   TData = Awaited<ReturnType<typeof getPnlHistory>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof getPnlHistory>>,
     TError,
     TData
@@ -655,7 +660,7 @@ export const getListAgentDecisionsQueryOptions = <
 >(
   params?: ListAgentDecisionsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof listAgentDecisions>>,
       TError,
       TData
@@ -694,7 +699,7 @@ export function useListAgentDecisions<
 >(
   params?: ListAgentDecisionsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof listAgentDecisions>>,
       TError,
       TData
@@ -821,7 +826,7 @@ export const getGetAgentStatusQueryOptions = <
   TData = Awaited<ReturnType<typeof getAgentStatus>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof getAgentStatus>>,
     TError,
     TData
@@ -856,7 +861,7 @@ export function useGetAgentStatus<
   TData = Awaited<ReturnType<typeof getAgentStatus>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof getAgentStatus>>,
     TError,
     TData
@@ -896,7 +901,7 @@ export const getGetChainStatusQueryOptions = <
   TData = Awaited<ReturnType<typeof getChainStatus>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof getChainStatus>>,
     TError,
     TData
@@ -931,7 +936,7 @@ export function useGetChainStatus<
   TData = Awaited<ReturnType<typeof getChainStatus>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof getChainStatus>>,
     TError,
     TData
@@ -971,7 +976,7 @@ export const getGetOnChainPnlQueryOptions = <
   TData = Awaited<ReturnType<typeof getOnChainPnl>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof getOnChainPnl>>,
     TError,
     TData
@@ -1006,7 +1011,7 @@ export function useGetOnChainPnl<
   TData = Awaited<ReturnType<typeof getOnChainPnl>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: QueryOptionsInput<
     Awaited<ReturnType<typeof getOnChainPnl>>,
     TError,
     TData
@@ -1063,7 +1068,7 @@ export const getListOnChainTradesQueryOptions = <
 >(
   params?: ListOnChainTradesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof listOnChainTrades>>,
       TError,
       TData
@@ -1102,7 +1107,7 @@ export function useListOnChainTrades<
 >(
   params?: ListOnChainTradesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof listOnChainTrades>>,
       TError,
       TData

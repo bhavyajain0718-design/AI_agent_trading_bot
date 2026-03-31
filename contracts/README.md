@@ -1,73 +1,66 @@
-# TradingLedger Smart Contract
+## Foundry
 
-Solidity smart contract for on-chain trade settlement and P&L recording.
+**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
 
-## Prerequisites
+Foundry consists of:
 
-Install [Foundry](https://getfoundry.sh/):
+- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
+- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
+- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
+- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
 
-```bash
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
+## Documentation
+
+https://book.getfoundry.sh/
+
+## Usage
+
+### Build
+
+```shell
+$ forge build
 ```
 
-## Build
+### Test
 
-```bash
-cd contracts
-forge build
+```shell
+$ forge test
 ```
 
-## Test
+### Format
 
-```bash
-cd contracts
-forge test -vv
+```shell
+$ forge fmt
 ```
 
-## Deploy to local Anvil
+### Gas Snapshots
 
-```bash
-# Terminal 1: Start local EVM node
-anvil
-
-# Terminal 2: Deploy the contract
-cd contracts
-forge script script/Deploy.s.sol \
-  --rpc-url http://127.0.0.1:8545 \
-  --broadcast \
-  --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+```shell
+$ forge snapshot
 ```
 
-Copy the deployed contract address and set it in your `.env`:
-```
-CONTRACT_ADDRESS=0x...
-```
+### Anvil
 
-## Deploy to Sepolia Testnet
-
-```bash
-cd contracts
-forge script script/Deploy.s.sol \
-  --rpc-url $SEPOLIA_RPC_URL \
-  --broadcast \
-  --verify \
-  --private-key $DEPLOYER_PRIVATE_KEY
+```shell
+$ anvil
 ```
 
-## Contract ABI
+### Deploy
 
-The ABI is generated at `contracts/out/TradingLedger.sol/TradingLedger.json` after `forge build`.
+```shell
+$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+```
 
-## Key Functions
+### Cast
 
-| Function | Description |
-|---|---|
-| `recordTrade(symbol, side, price, qty, pnl)` | Record a settled trade (agent only) |
-| `getTrade(id)` | Get a single trade by ID |
-| `getTrades(offset, limit)` | Paginate trades (newest first) |
-| `tradeCount()` | Total number of recorded trades |
-| `totalPnl()` | Cumulative P&L (× 1e8) |
-| `setAgent(address, bool)` | Authorize/revoke agent (owner only) |
+```shell
+$ cast <subcommand>
+```
 
-All price/quantity/P&L values are scaled by **1e8** to avoid floating point issues.
+### Help
+
+```shell
+$ forge --help
+$ anvil --help
+$ cast --help
+```

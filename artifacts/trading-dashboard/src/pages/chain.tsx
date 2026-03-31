@@ -10,6 +10,7 @@ export default function Chain() {
   const { data: chainStatus, isLoading: loadingStatus } = useGetChainStatus({ query: { refetchInterval: 15000 } });
   const { data: pnlStats, isLoading: loadingPnl } = useGetOnChainPnl();
   const { data: onChainTrades, isLoading: loadingTrades } = useListOnChainTrades({ limit: 10 });
+  const recentOnChainTrades = Array.isArray(onChainTrades) ? onChainTrades : [];
 
   return (
     <div className="space-y-6">
@@ -117,8 +118,8 @@ export default function Chain() {
                       <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
                     </TableCell>
                   </TableRow>
-                ) : onChainTrades && onChainTrades.length > 0 ? (
-                  onChainTrades.map((tx) => (
+                ) : recentOnChainTrades.length > 0 ? (
+                  recentOnChainTrades.map((tx) => (
                     <TableRow key={tx.txHash} className="border-border/20 group">
                       <TableCell className="font-mono text-[10px]">
                         <a href={`https://etherscan.io/tx/${tx.txHash}`} target="_blank" rel="noreferrer" className="text-[hsl(270,100%,65%)] hover:underline decoration-[hsl(270,100%,65%,0.5)] underline-offset-4">

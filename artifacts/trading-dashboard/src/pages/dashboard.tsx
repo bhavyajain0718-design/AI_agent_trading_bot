@@ -5,6 +5,17 @@ import { Activity, DollarSign, Target, Briefcase, Link as LinkIcon, AlertTriangl
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const PAPER_TRADING_START_BALANCE = 10000;
+
+function safeNumber(value: unknown, fallback = 0) {
+  const parsed =
+    typeof value === "number" ? value :
+      typeof value === "string" ? parseFloat(value) :
+        Number.NaN;
+
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export default function Dashboard() {
   const { data: summary, isLoading: loadingSummary } = useGetPortfolioSummary({ query: { refetchInterval: 15000 } });
   const { data: agentStatus, isLoading: loadingAgent } = useGetAgentStatus({ query: { refetchInterval: 15000 } });
@@ -12,8 +23,11 @@ export default function Dashboard() {
   const { data: pnlHistory, isLoading: loadingPnl } = useGetPnlHistory();
   const { data: decisions, isLoading: loadingDecisions } = useListAgentDecisions({ limit: 5 }, { query: { refetchInterval: 15000 } });
 
-  const totalPnlNum = summary ? parseFloat(summary.totalPnl) : 0;
+  const totalValueNum = safeNumber(summary?.totalValue, PAPER_TRADING_START_BALANCE);
+  const totalPnlNum = safeNumber(summary?.totalPnl, 0);
   const isProfit = totalPnlNum >= 0;
+  const chartData = Array.isArray(pnlHistory) ? pnlHistory : [];
+  const recentDecisions = Array.isArray(decisions) ? decisions : [];
 
   return (
     <div className="space-y-6">
@@ -27,27 +41,27 @@ export default function Dashboard() {
 
       {/* Top Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard 
-          title="Total Value" 
-          value={loadingSummary ? null : `$${parseFloat(summary?.totalValue || "0").toLocaleString()}`}
+        <StatCard
+          title="Total Value"
+          value={loadingSummary ? null : `$${totalValueNum.toLocaleString()}`}
           icon={<DollarSign className="h-4 w-4" />}
           subtitle={`${summary?.totalTrades || 0} trades total`}
         />
-        <StatCard 
-          title="Net P&L" 
+        <StatCard
+          title="Net P&L"
           value={loadingSummary ? null : `${isProfit ? '+' : ''}$${Math.abs(totalPnlNum).toLocaleString()}`}
           icon={<Activity className="h-4 w-4" />}
           valueClassName={isProfit ? "text-[hsl(152,100%,50%)]" : "text-destructive"}
           subtitle="All time realized"
         />
-        <StatCard 
-          title="Win Rate" 
+        <StatCard
+          title="Win Rate"
           value={loadingSummary ? null : `${(summary?.winRate || 0).toFixed(1)}%`}
           icon={<Target className="h-4 w-4" />}
           subtitle="Across all strategies"
         />
-        <StatCard 
-          title="On-Chain Settled" 
+        <StatCard
+          title="On-Chain Settled"
           value={loadingSummary ? null : `${summary?.onChainSettled || 0} Trades`}
           icon={<LinkIcon className="h-4 w-4 text-[hsl(270,100%,65%)]" />}
           subtitle="Immutable ledger"
@@ -65,18 +79,18 @@ export default function Dashboard() {
               <div className="w-full h-full flex items-center justify-center">
                 <Skeleton className="w-full h-[300px] rounded-lg" />
               </div>
-            ) : pnlHistory && pnlHistory.length > 0 ? (
+            ) : chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={pnlHistory}>
+                <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="colorPnl" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
                   <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '4px', fontFamily: 'monospace' }}
                     itemStyle={{ color: 'hsl(var(--foreground))' }}
                   />
@@ -99,11 +113,11 @@ export default function Dashboard() {
           <CardContent className="pt-0 flex-1 overflow-y-auto">
             {loadingDecisions ? (
               <div className="space-y-4 mt-4">
-                {[1,2,3,4].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+                {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-16 w-full" />)}
               </div>
-            ) : decisions && decisions.length > 0 ? (
+            ) : recentDecisions.length > 0 ? (
               <div className="space-y-4 mt-4">
-                {decisions.map((dec) => (
+                {recentDecisions.map((dec) => (
                   <div key={dec.id} className="flex flex-col gap-1 border-b border-border/20 pb-3 last:border-0 last:pb-0">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 font-mono text-sm">
@@ -164,10 +178,10 @@ function StatusBadge({ label, status }: { label: string, status: "ok" | "warn" |
     warn: "text-yellow-500 bg-yellow-500/10 border-yellow-500/20",
     error: "text-destructive bg-destructive/10 border-destructive/20"
   };
-  
+
   return (
     <div className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded border text-[10px] uppercase font-bold", colors[status])}>
-      <div className={cn("h-1.5 w-1.5 rounded-full animate-pulse", 
+      <div className={cn("h-1.5 w-1.5 rounded-full animate-pulse",
         status === "ok" ? "bg-[hsl(152,100%,50%)]" : status === "warn" ? "bg-yellow-500" : "bg-destructive"
       )} />
       {label}

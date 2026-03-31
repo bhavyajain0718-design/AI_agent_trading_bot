@@ -19,7 +19,7 @@ export default function Trades() {
   const { data: trades, isLoading } = useListTrades({ symbol: symbolFilter || undefined });
   const [settleTradeId, setSettleTradeId] = useState<number | null>(null);
 
-  const filteredTrades = trades || [];
+  const filteredTrades = Array.isArray(trades) ? trades : [];
 
   return (
     <div className="space-y-6">
@@ -143,7 +143,7 @@ export default function Trades() {
       {settleTradeId && (
         <SettleTradeDialog 
           tradeId={settleTradeId} 
-          trade={trades?.find(t => t.id === settleTradeId)}
+          trade={filteredTrades.find(t => t.id === settleTradeId)}
           open={!!settleTradeId} 
           onOpenChange={(open) => !open && setSettleTradeId(null)} 
         />

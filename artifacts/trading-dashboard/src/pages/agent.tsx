@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useGetAgentStatus, useListAgentDecisions, getGetAgentStatusQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,8 @@ export default function Agent() {
   const { data: status, isLoading: loadingStatus } = useGetAgentStatus({ query: { refetchInterval: 5000 } });
   const { data: decisions, isLoading: loadingDecisions } = useListAgentDecisions({ limit: 20 }, { query: { refetchInterval: 10000 } });
   const { toast } = useToast();
+  const recentDecisions = Array.isArray(decisions) ? decisions : [];
+  const [displayUptime, setDisplayUptime] = useState(0);
 
   const { mutate: changeState, isPending } = useMutation({
     mutationFn: patchAgentStatus,
@@ -43,6 +46,22 @@ export default function Agent() {
   });
 
   const currentState = status?.status ?? "stopped";
+
+  useEffect(() => {
+    setDisplayUptime(status?.uptime ?? 0);
+  }, [status?.uptime, currentState]);
+
+  useEffect(() => {
+    if (currentState !== "running") {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setDisplayUptime((prev) => prev + 1);
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [currentState]);
 
   return (
     <div className="space-y-6">
@@ -150,7 +169,7 @@ export default function Agent() {
             <div>
               <div className="text-[10px] font-mono text-muted-foreground uppercase mb-1">Uptime</div>
               <div className="font-mono text-2xl font-light tracking-tight">
-                {loadingStatus ? <Skeleton className="h-8 w-24" /> : formatUptime(status?.uptime || 0)}
+                {loadingStatus ? <Skeleton className="h-8 w-24" /> : formatUptime(displayUptime)}
               </div>
             </div>
           </CardContent>
@@ -170,12 +189,12 @@ export default function Agent() {
                 <div className="p-6 space-y-4">
                   {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full" />)}
                 </div>
-              ) : decisions?.length === 0 ? (
+              ) : recentDecisions.length === 0 ? (
                 <div className="p-10 text-center font-mono text-muted-foreground text-sm">
                   WAITING FOR SIGNALS...
                 </div>
               ) : (
-                decisions?.map(dec => (
+                recentDecisions.map(dec => (
                   <div key={dec.id} className="p-4 hover:bg-muted/10 transition-colors">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-3">
