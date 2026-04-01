@@ -60,7 +60,7 @@ Most projects do **one thing well**:
 ![Agent Control Preview](./Assets/Assets/Agent.png)
 
 ### 🧪 Test Coverage Preview
-![Test Coverage](./Assets/Assets/test.png)
+![Test Coverage](./Assets/Assets/Test.png)
 
 ---
 
