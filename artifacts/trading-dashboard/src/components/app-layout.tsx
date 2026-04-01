@@ -3,17 +3,19 @@ import { Activity, LayoutDashboard, ListTree, BoxSelect, Cpu, ChartCandlestick }
 import { cn } from "@/lib/utils";
 import { Ticker } from "./ticker";
 import { useHealthCheck } from "@workspace/api-client-react";
+import { useWallet } from "@/hooks/use-wallet";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { data: health } = useHealthCheck({ query: { refetchInterval: 15000 } });
+  const { connectedWallet } = useWallet();
 
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/markets", label: "Markets", icon: ChartCandlestick },
-    { href: "/trades", label: "Trades", icon: ListTree },
-    { href: "/chain", label: "Web3 Settlement", icon: BoxSelect },
-    { href: "/agent", label: "Agent Control", icon: Cpu },
+    { href: "/trades", label: "Trades", icon: ListTree, requiresWallet: true },
+    { href: "/chain", label: "Web3 Settlement", icon: BoxSelect, requiresWallet: true },
+    { href: "/agent", label: "Agent Control", icon: Cpu, requiresWallet: true },
   ];
 
   return (
@@ -41,7 +43,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
-            {navItems.map((item) => {
+            {navItems
+              .filter((item) => !item.requiresWallet || connectedWallet)
+              .map((item) => {
               const isActive = location === item.href;
               return (
                 <Link

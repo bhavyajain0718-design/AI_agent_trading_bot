@@ -8,6 +8,8 @@ import {
   GetAgentStatusResponse,
 } from "@workspace/api-zod";
 import { agentEngine } from "../lib/agent-engine";
+import { checkKrakenConnectivity, checkRpcConnectivity } from "../lib/connectivity";
+import { MARKET_TIMEFRAMES, normalizeTimeframe } from "../lib/market-data";
 
 const router: IRouter = Router();
 
@@ -45,38 +47,62 @@ router.post("/agent/decisions", async (req, res): Promise<void> => {
 
 router.get("/agent/status", async (_req, res): Promise<void> => {
   const runtime = agentEngine.getStatus();
+  const [krakenConnected, web3Connected] = await Promise.all([
+    checkKrakenConnectivity(),
+    checkRpcConnectivity(),
+  ]);
   const status = {
     status: runtime.status,
     strategy: runtime.strategy,
     uptime: runtime.uptime,
-    krakenConnected: runtime.krakenConnected,
-    web3Connected: !!process.env["CONTRACT_ADDRESS"],
+    krakenConnected: krakenConnected || runtime.krakenConnected,
+    web3Connected,
     contractAddress: process.env["CONTRACT_ADDRESS"] ?? null,
     network: process.env["CHAIN_NETWORK"] ?? "anvil-local",
   };
   res.json(GetAgentStatusResponse.parse(status));
 });
 
+router.get("/agent/config", (_req, res): void => {
+  const runtime = agentEngine.getStatus();
+
+  res.json({
+    timeframe: runtime.timeframe,
+    availableTimeframes: Object.entries(MARKET_TIMEFRAMES).map(([key, value]) => ({
+      key,
+      label: value.label,
+    })),
+  });
+});
+
 const VALID_STATES = ["running", "paused", "stopped"] as const;
 type AgentStateType = (typeof VALID_STATES)[number];
 
-router.patch("/agent/status", (req, res): void => {
+router.patch("/agent/status", async (req, res): Promise<void> => {
   const requested = req.body?.status;
+  const requestedTimeframe = normalizeTimeframe(
+    typeof req.body?.timeframe === "string" ? req.body.timeframe : undefined,
+  );
   if (!VALID_STATES.includes(requested)) {
     res.status(400).json({ error: `status must be one of: ${VALID_STATES.join(", ")}` });
     return;
   }
 
   agentEngine.setState(requested as AgentStateType);
+  agentEngine.setTimeframe(requestedTimeframe);
   const runtime = agentEngine.getStatus();
+  const [krakenConnected, web3Connected] = await Promise.all([
+    checkKrakenConnectivity(),
+    checkRpcConnectivity(),
+  ]);
 
   res.json(
     GetAgentStatusResponse.parse({
       status: runtime.status,
       strategy: runtime.strategy,
       uptime: runtime.uptime,
-      krakenConnected: runtime.krakenConnected,
-      web3Connected: !!process.env["CONTRACT_ADDRESS"],
+      krakenConnected: krakenConnected || runtime.krakenConnected,
+      web3Connected,
       contractAddress: process.env["CONTRACT_ADDRESS"] ?? null,
       network: process.env["CHAIN_NETWORK"] ?? "anvil-local",
     }),

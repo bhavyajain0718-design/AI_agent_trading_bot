@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db, tradesTable } from "@workspace/db";
-import { isNotNull, count, sum, desc } from "drizzle-orm";
+import { eq, count, sum, desc } from "drizzle-orm";
 import {
   GetChainStatusResponse,
   GetOnChainPnlResponse,
   ListOnChainTradesResponse,
 } from "@workspace/api-zod";
+import { checkRpcConnectivity } from "../lib/connectivity";
 
 const router: IRouter = Router();
 
@@ -13,6 +14,7 @@ router.get("/chain/status", async (_req, res): Promise<void> => {
   const contractAddress = process.env["CONTRACT_ADDRESS"] ?? null;
   const rpcUrl = process.env["RPC_URL"] ?? "http://127.0.0.1:8545";
   const network = process.env["CHAIN_NETWORK"] ?? "anvil-local";
+  const rpcConnected = await checkRpcConnectivity(rpcUrl);
 
   const [stats] = await db
     .select({
@@ -20,10 +22,10 @@ router.get("/chain/status", async (_req, res): Promise<void> => {
       totalPnl: sum(tradesTable.pnl),
     })
     .from(tradesTable)
-    .where(isNotNull(tradesTable.chainTxHash));
+    .where(eq(tradesTable.status, "settled"));
 
   const status = {
-    connected: !!contractAddress,
+    connected: rpcConnected,
     network,
     contractAddress,
     contractDeployed: !!contractAddress,
@@ -42,12 +44,12 @@ router.get("/chain/on-chain-pnl", async (_req, res): Promise<void> => {
       totalPnl: sum(tradesTable.pnl),
     })
     .from(tradesTable)
-    .where(isNotNull(tradesTable.chainTxHash));
+    .where(eq(tradesTable.status, "settled"));
 
   const [latest] = await db
     .select({ chainSettledAt: tradesTable.chainSettledAt })
     .from(tradesTable)
-    .where(isNotNull(tradesTable.chainTxHash))
+    .where(eq(tradesTable.status, "settled"))
     .orderBy(desc(tradesTable.chainSettledAt))
     .limit(1);
 
@@ -66,7 +68,7 @@ router.get("/chain/on-chain-trades", async (req, res): Promise<void> => {
   const trades = await db
     .select()
     .from(tradesTable)
-    .where(isNotNull(tradesTable.chainTxHash))
+    .where(eq(tradesTable.status, "settled"))
     .orderBy(desc(tradesTable.chainSettledAt))
     .limit(limit);
 
@@ -76,7 +78,7 @@ router.get("/chain/on-chain-trades", async (req, res): Promise<void> => {
     side: t.side,
     price: t.price ?? "0",
     pnl: t.pnl ?? "0",
-    txHash: t.chainTxHash ?? "",
+    txHash: t.chainTxHash ?? `local-settlement-${t.id}`,
     timestamp: t.chainSettledAt?.toISOString() ?? t.createdAt.toISOString(),
   }));
 

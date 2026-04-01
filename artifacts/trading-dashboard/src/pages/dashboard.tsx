@@ -1,9 +1,13 @@
-import { useGetPortfolioSummary, useGetAgentStatus, useGetChainStatus, useGetPnlHistory, useListAgentDecisions } from "@workspace/api-client-react";
+import { useGetAgentStatus, useGetChainStatus, useListAgentDecisions } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Activity, DollarSign, Target, Briefcase, Link as LinkIcon, AlertTriangle, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { WalletMenu } from "@/components/wallet-menu";
+import { useWallet } from "@/hooks/use-wallet";
+import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 
 const PAPER_TRADING_START_BALANCE = 10000;
 
@@ -17,11 +21,34 @@ function safeNumber(value: unknown, fallback = 0) {
 }
 
 export default function Dashboard() {
-  const { data: summary, isLoading: loadingSummary } = useGetPortfolioSummary({ query: { refetchInterval: 15000 } });
-  const { data: agentStatus, isLoading: loadingAgent } = useGetAgentStatus({ query: { refetchInterval: 15000 } });
-  const { data: chainStatus, isLoading: loadingChain } = useGetChainStatus({ query: { refetchInterval: 15000 } });
-  const { data: pnlHistory, isLoading: loadingPnl } = useGetPnlHistory();
-  const { data: decisions, isLoading: loadingDecisions } = useListAgentDecisions({ limit: 5 }, { query: { refetchInterval: 15000 } });
+  const { connectedWallet } = useWallet();
+  const { data: agentStatus, isLoading: loadingAgent } = useGetAgentStatus({ query: { refetchInterval: 5000 } });
+  const { data: chainStatus, isLoading: loadingChain } = useGetChainStatus({ query: { refetchInterval: 10000 } });
+  const { data: decisions, isLoading: loadingDecisions } = useListAgentDecisions({ limit: 5 }, { query: { refetchInterval: 5000 } });
+  const { data: summary, isLoading: loadingSummary } = useQuery({
+    queryKey: ["/api/portfolio/summary", connectedWallet],
+    enabled: Boolean(connectedWallet),
+    refetchInterval: 5000,
+    queryFn: async () => {
+      const response = await fetch(`/api/portfolio/summary?walletAddress=${connectedWallet}`);
+      if (!response.ok) {
+        throw new Error("Failed to load wallet portfolio summary");
+      }
+      return response.json();
+    },
+  });
+  const { data: pnlHistory, isLoading: loadingPnl } = useQuery({
+    queryKey: ["/api/portfolio/pnl", connectedWallet],
+    enabled: Boolean(connectedWallet),
+    refetchInterval: 5000,
+    queryFn: async () => {
+      const response = await fetch(`/api/portfolio/pnl?walletAddress=${connectedWallet}`);
+      if (!response.ok) {
+        throw new Error("Failed to load wallet P&L history");
+      }
+      return response.json();
+    },
+  });
 
   const totalValueNum = safeNumber(summary?.totalValue, PAPER_TRADING_START_BALANCE);
   const totalPnlNum = safeNumber(summary?.totalPnl, 0);
@@ -34,6 +61,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-mono font-bold tracking-tight text-primary uppercase">Command Center</h2>
         <div className="flex items-center gap-4 text-sm font-mono">
+          <WalletMenu />
           <StatusBadge label="AGENT" status={agentStatus?.status === "running" ? "ok" : "warn"} />
           <StatusBadge label="WEB3" status={chainStatus?.connected ? "ok" : "error"} />
         </div>
@@ -43,28 +71,28 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Total Value"
-          value={loadingSummary ? null : `$${totalValueNum.toLocaleString()}`}
+          value={!connectedWallet ? "Connect Wallet" : loadingSummary ? null : `$${totalValueNum.toLocaleString()}`}
           icon={<DollarSign className="h-4 w-4" />}
-          subtitle={`${summary?.totalTrades || 0} trades total`}
+          subtitle={!connectedWallet ? "Wallet-scoped portfolio" : `${summary?.totalTrades || 0} trades for wallet`}
         />
         <StatCard
           title="Net P&L"
-          value={loadingSummary ? null : `${isProfit ? '+' : ''}$${Math.abs(totalPnlNum).toLocaleString()}`}
+          value={!connectedWallet ? "Connect Wallet" : loadingSummary ? null : `${isProfit ? '+' : ''}$${Math.abs(totalPnlNum).toLocaleString()}`}
           icon={<Activity className="h-4 w-4" />}
-          valueClassName={isProfit ? "text-[hsl(152,100%,50%)]" : "text-destructive"}
-          subtitle="All time realized"
+          valueClassName={!connectedWallet ? "text-muted-foreground" : isProfit ? "text-[hsl(152,100%,50%)]" : "text-destructive"}
+          subtitle={!connectedWallet ? "Connect to view wallet P&L" : "Wallet realized P&L"}
         />
         <StatCard
           title="Win Rate"
-          value={loadingSummary ? null : `${(summary?.winRate || 0).toFixed(1)}%`}
+          value={!connectedWallet ? "Connect Wallet" : loadingSummary ? null : `${(summary?.winRate || 0).toFixed(1)}%`}
           icon={<Target className="h-4 w-4" />}
-          subtitle="Across all strategies"
+          subtitle={!connectedWallet ? "Connect to view win rate" : "For connected wallet"}
         />
         <StatCard
           title="On-Chain Settled"
-          value={loadingSummary ? null : `${summary?.onChainSettled || 0} Trades`}
+          value={!connectedWallet ? "Connect Wallet" : loadingSummary ? null : `${summary?.onChainSettled || 0} Trades`}
           icon={<LinkIcon className="h-4 w-4 text-[hsl(270,100%,65%)]" />}
-          subtitle="Immutable ledger"
+          subtitle={!connectedWallet ? "Connect to view settlements" : "Settled by connected wallet"}
         />
       </div>
 
@@ -75,7 +103,14 @@ export default function Dashboard() {
             <CardTitle className="text-sm font-mono uppercase text-muted-foreground">Cumulative P&L</CardTitle>
           </CardHeader>
           <CardContent className="pt-6 h-[350px]">
-            {loadingPnl ? (
+            {!connectedWallet ? (
+              <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-center">
+                <div className="font-mono text-sm text-muted-foreground uppercase">
+                  Connect a wallet to view wallet-specific P&L
+                </div>
+                <WalletMenu />
+              </div>
+            ) : loadingPnl ? (
               <div className="w-full h-full flex items-center justify-center">
                 <Skeleton className="w-full h-[300px] rounded-lg" />
               </div>

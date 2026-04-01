@@ -5,12 +5,30 @@ import { Badge } from "@/components/ui/badge";
 import { LinkIcon, Activity, BoxSelect, Database, Cpu, ArrowUpRight, ArrowDownRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useWallet } from "@/hooks/use-wallet";
+import { WalletGate } from "@/components/wallet-gate";
+
+const SEPOLIA_ETHERSCAN_BASE = "https://sepolia.etherscan.io";
+
+function isExplorerHash(txHash: string) {
+  return txHash.startsWith("0x");
+}
 
 export default function Chain() {
+  const { connectedWallet } = useWallet();
   const { data: chainStatus, isLoading: loadingStatus } = useGetChainStatus({ query: { refetchInterval: 15000 } });
   const { data: pnlStats, isLoading: loadingPnl } = useGetOnChainPnl();
   const { data: onChainTrades, isLoading: loadingTrades } = useListOnChainTrades({ limit: 10 });
   const recentOnChainTrades = Array.isArray(onChainTrades) ? onChainTrades : [];
+
+  if (!connectedWallet) {
+    return (
+      <WalletGate
+        title="Web3 Settlement Locked"
+        description="Connect a wallet first to inspect on-chain settlements. This page is reserved for wallet-scoped ledger activity and transaction history."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -122,9 +140,15 @@ export default function Chain() {
                   recentOnChainTrades.map((tx) => (
                     <TableRow key={tx.txHash} className="border-border/20 group">
                       <TableCell className="font-mono text-[10px]">
-                        <a href={`https://etherscan.io/tx/${tx.txHash}`} target="_blank" rel="noreferrer" className="text-[hsl(270,100%,65%)] hover:underline decoration-[hsl(270,100%,65%,0.5)] underline-offset-4">
-                          {tx.txHash.substring(0,8)}...{tx.txHash.substring(tx.txHash.length-6)}
-                        </a>
+                        {isExplorerHash(tx.txHash) ? (
+                          <a href={`${SEPOLIA_ETHERSCAN_BASE}/tx/${tx.txHash}`} target="_blank" rel="noreferrer" className="text-[hsl(270,100%,65%)] hover:underline decoration-[hsl(270,100%,65%,0.5)] underline-offset-4">
+                            {tx.txHash.substring(0,8)}...{tx.txHash.substring(tx.txHash.length-6)}
+                          </a>
+                        ) : (
+                          <span className="text-[hsl(270,100%,65%)]">
+                            {tx.txHash}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="font-mono text-xs font-bold text-foreground">
                         {tx.symbol} <span className={cn("text-[10px]", tx.side === 'buy' ? "text-[hsl(152,100%,50%)]" : "text-destructive")}>{tx.side.toUpperCase()}</span>

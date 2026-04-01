@@ -2,6 +2,18 @@ import { z } from "zod";
 
 const KRAKEN_API_BASE = "https://api.kraken.com/0/public";
 const ASSET_PAIRS_CACHE_TTL_MS = 15 * 60_000;
+const TICKER_CACHE_TTL_MS = 1000;
+const MIN_EXECUTION_CONFIDENCE = Number(process.env.EXECUTION_CONFIDENCE_THRESHOLD ?? "0.6");
+
+export const MARKET_TIMEFRAMES = {
+  "5m": { label: "5M", fetchIntervalMinutes: 5, displayMinutes: 5, aggregationSize: 1 },
+  "10m": { label: "10M", fetchIntervalMinutes: 5, displayMinutes: 10, aggregationSize: 2 },
+  "30m": { label: "30M", fetchIntervalMinutes: 30, displayMinutes: 30, aggregationSize: 1 },
+  "1h": { label: "1H", fetchIntervalMinutes: 60, displayMinutes: 60, aggregationSize: 1 },
+  "1d": { label: "1D", fetchIntervalMinutes: 1440, displayMinutes: 1440, aggregationSize: 1 },
+} as const;
+
+export type MarketTimeframeKey = keyof typeof MARKET_TIMEFRAMES;
 
 export const TRACKED_MARKETS = [
   { symbol: "BTC/USD", krakenPair: "XBTUSD", aliases: ["BTC/USD", "XBT/USD", "XXBTZUSD"] },
@@ -38,6 +50,7 @@ type DecisionSummary = {
 export type MarketSnapshot = {
   symbol: MarketSymbol;
   krakenPair: string;
+  timeframe: MarketTimeframeKey;
   price: number;
   change24h: number;
   candles: Candle[];
@@ -48,6 +61,16 @@ export type MarketSnapshot = {
 const ohlcResponseSchema = z.object({
   error: z.array(z.string()),
   result: z.record(z.string(), z.unknown()),
+});
+
+const tickerResponseSchema = z.object({
+  error: z.array(z.string()),
+  result: z.record(
+    z.string(),
+    z.object({
+      c: z.array(z.string()).optional(),
+    }),
+  ),
 });
 
 const assetPairsResponseSchema = z.object({
@@ -73,9 +96,18 @@ type AssetPairInfo = {
 
 let assetPairsCache: { expiresAt: number; pairs: AssetPairInfo[] } | null = null;
 let assetPairsInflight: Promise<AssetPairInfo[]> | null = null;
+const tickerCache = new Map<string, { expiresAt: number; price: number }>();
 
 function getTrackedMarket(symbol: string | undefined) {
   return TRACKED_MARKETS.find((market) => market.symbol === symbol) ?? TRACKED_MARKETS[0];
+}
+
+export function normalizeTimeframe(timeframe: string | undefined): MarketTimeframeKey {
+  if (timeframe && timeframe in MARKET_TIMEFRAMES) {
+    return timeframe as MarketTimeframeKey;
+  }
+
+  return "1h";
 }
 
 function toFiniteNumber(value: unknown): number {
@@ -120,10 +152,41 @@ function parseCandles(raw: unknown): Candle[] {
     .filter((candle): candle is Candle => candle !== null);
 }
 
-async function fetchKrakenOhlc(krakenPair: string): Promise<Candle[]> {
+function aggregateCandles(candles: Candle[], aggregationSize: number): Candle[] {
+  if (aggregationSize <= 1) {
+    return candles;
+  }
+
+  const aggregated: Candle[] = [];
+
+  for (let index = 0; index + aggregationSize <= candles.length; index += aggregationSize) {
+    const chunk = candles.slice(index, index + aggregationSize);
+    const open = chunk[0];
+    const close = chunk[chunk.length - 1];
+    const volume = chunk.reduce((sum, candle) => sum + candle.volume, 0);
+    const tradeCount = chunk.reduce((sum, candle) => sum + candle.count, 0);
+    const vwapVolume = chunk.reduce((sum, candle) => sum + candle.vwap * candle.volume, 0);
+
+    aggregated.push({
+      time: open.time,
+      open: open.open,
+      high: Math.max(...chunk.map((candle) => candle.high)),
+      low: Math.min(...chunk.map((candle) => candle.low)),
+      close: close.close,
+      vwap: volume > 0 ? vwapVolume / volume : close.close,
+      volume,
+      count: tradeCount,
+    });
+  }
+
+  return aggregated;
+}
+
+async function fetchKrakenOhlc(krakenPair: string, timeframe: MarketTimeframeKey): Promise<Candle[]> {
+  const timeframeConfig = MARKET_TIMEFRAMES[timeframe];
   const url = new URL(`${KRAKEN_API_BASE}/OHLC`);
   url.searchParams.set("pair", krakenPair);
-  url.searchParams.set("interval", "60");
+  url.searchParams.set("interval", String(timeframeConfig.fetchIntervalMinutes));
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -137,10 +200,43 @@ async function fetchKrakenOhlc(krakenPair: string): Promise<Candle[]> {
 
   const resultEntries = Object.entries(parsed.result).filter(([key]) => key !== "last");
   const [, rawCandles] = resultEntries[0] ?? [];
-  const candles = parseCandles(rawCandles);
+  const candles = aggregateCandles(parseCandles(rawCandles), timeframeConfig.aggregationSize);
 
-  // Kraken includes the in-progress candle as the last entry; we only score completed hours.
+  // Kraken includes the in-progress candle as the last entry; we only score completed candles.
   return candles.slice(0, -1);
+}
+
+async function fetchKrakenTickerPrice(pair: string): Promise<number> {
+  const cached = tickerCache.get(pair);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.price;
+  }
+
+  const url = new URL(`${KRAKEN_API_BASE}/Ticker`);
+  url.searchParams.set("pair", pair);
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Kraken Ticker request failed with ${response.status}`);
+  }
+
+  const parsed = tickerResponseSchema.parse(await response.json());
+  if (parsed.error.length > 0) {
+    throw new Error(`Kraken Ticker error: ${parsed.error.join(", ")}`);
+  }
+
+  const ticker = Object.values(parsed.result)[0];
+  const price = toFiniteNumber(ticker?.c?.[0]);
+  if (!Number.isFinite(price)) {
+    throw new Error(`Kraken Ticker returned invalid price for ${pair}`);
+  }
+
+  tickerCache.set(pair, {
+    expiresAt: Date.now() + TICKER_CACHE_TTL_MS,
+    price,
+  });
+
+  return price;
 }
 
 async function fetchKrakenAssetPairs(): Promise<AssetPairInfo[]> {
@@ -221,13 +317,16 @@ async function resolveKrakenPairCandidates(
   return [...symbolForms];
 }
 
-async function fetchMarketCandles(market: (typeof TRACKED_MARKETS)[number]) {
+async function fetchMarketCandles(
+  market: (typeof TRACKED_MARKETS)[number],
+  timeframe: MarketTimeframeKey,
+) {
   const candidates = await resolveKrakenPairCandidates(market);
   const errors: string[] = [];
 
   for (const candidate of candidates) {
     try {
-      const candles = await fetchKrakenOhlc(candidate);
+      const candles = await fetchKrakenOhlc(candidate, timeframe);
       if (candles.length >= 60) {
         return { candles, resolvedPair: candidate };
       }
@@ -238,6 +337,30 @@ async function fetchMarketCandles(market: (typeof TRACKED_MARKETS)[number]) {
   }
 
   throw new Error(`Unable to load Kraken candles for ${market.symbol}. ${errors.join(" | ")}`);
+}
+
+export async function getLiveMarketPrice(
+  symbol: string,
+  timeframe: MarketTimeframeKey = "1h",
+): Promise<number> {
+  const market = getTrackedMarket(symbol);
+  const candidates = await resolveKrakenPairCandidates(market);
+  const errors: string[] = [];
+
+  for (const candidate of candidates) {
+    try {
+      return await fetchKrakenTickerPrice(candidate);
+    } catch (error) {
+      errors.push(`${candidate}: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+  }
+
+  const snapshot = await getMarketSnapshot(market.symbol, timeframe);
+  if (Number.isFinite(snapshot.price)) {
+    return snapshot.price;
+  }
+
+  throw new Error(`Unable to load live Kraken price for ${symbol}. ${errors.join(" | ")}`);
 }
 
 function calculateEma(values: number[], period: number): number[] {
@@ -323,7 +446,7 @@ function formatPercent(value: number) {
 
 function scoreDecision(candles: Candle[]) {
   if (candles.length < 60) {
-    throw new Error("At least 60 completed hourly candles are required.");
+    throw new Error("At least 60 completed candles are required.");
   }
 
   const closes = candles.map((candle) => candle.close);
@@ -447,7 +570,7 @@ function scoreDecision(candles: Candle[]) {
     confidence = Math.abs(score) === 2 ? 0.6 : 0.75;
   }
 
-  const shouldExecute = confidence > 0.65 && action !== "hold";
+  const shouldExecute = confidence >= MIN_EXECUTION_CONFIDENCE && action !== "hold";
   const reasoning = `${signalLabel} with score ${score}. ${reasons.join("; ")}.`;
 
   return {
@@ -462,19 +585,27 @@ function scoreDecision(candles: Candle[]) {
   };
 }
 
-export async function getMarketSnapshot(symbol?: string): Promise<MarketSnapshot> {
+export async function getMarketSnapshot(
+  symbol?: string,
+  timeframe: MarketTimeframeKey = "1h",
+): Promise<MarketSnapshot> {
   const market = getTrackedMarket(symbol);
-  const { candles, resolvedPair } = await fetchMarketCandles(market);
+  const normalizedTimeframe = normalizeTimeframe(timeframe);
+  const timeframeConfig = MARKET_TIMEFRAMES[normalizedTimeframe];
+  const { candles, resolvedPair } = await fetchMarketCandles(market, normalizedTimeframe);
   const recentCandles = candles.slice(-60);
   const latestCandle = recentCandles[recentCandles.length - 1];
-  const dayAgoCandle = recentCandles[recentCandles.length - 24] ?? recentCandles[0];
+  const periodsPerDay = Math.max(1, Math.round(1440 / timeframeConfig.displayMinutes));
+  const dayAgoCandle = recentCandles[recentCandles.length - periodsPerDay] ?? recentCandles[0];
   const decision = scoreDecision(recentCandles);
-  const change24h = ((latestCandle.close - dayAgoCandle.close) / dayAgoCandle.close) * 100;
+  const livePrice = await getLiveMarketPrice(market.symbol, normalizedTimeframe).catch(() => latestCandle.close);
+  const change24h = ((livePrice - dayAgoCandle.close) / dayAgoCandle.close) * 100;
 
   return {
     symbol: market.symbol,
     krakenPair: resolvedPair,
-    price: latestCandle.close,
+    timeframe: normalizedTimeframe,
+    price: livePrice,
     change24h,
     candles: recentCandles,
     latestCandle,
@@ -482,9 +613,10 @@ export async function getMarketSnapshot(symbol?: string): Promise<MarketSnapshot
   };
 }
 
-export async function getAllMarketSnapshots() {
+export async function getAllMarketSnapshots(timeframe: MarketTimeframeKey = "1h") {
+  const normalizedTimeframe = normalizeTimeframe(timeframe);
   const settled = await Promise.allSettled(
-    TRACKED_MARKETS.map((market) => getMarketSnapshot(market.symbol)),
+    TRACKED_MARKETS.map((market) => getMarketSnapshot(market.symbol, normalizedTimeframe)),
   );
 
   const snapshots = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));

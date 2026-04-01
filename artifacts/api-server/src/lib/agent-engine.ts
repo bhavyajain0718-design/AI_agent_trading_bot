@@ -1,18 +1,24 @@
 import { and, desc, eq, gt } from "drizzle-orm";
 import { db, agentDecisionsTable, tradesTable } from "@workspace/db";
 import { logger } from "./logger";
-import { TRACKED_MARKETS, getMarketSnapshot } from "./market-data";
+import {
+  TRACKED_MARKETS,
+  type MarketTimeframeKey,
+  getMarketSnapshot,
+  normalizeTimeframe,
+} from "./market-data";
 
 type AgentRuntimeState = "running" | "paused" | "stopped";
 
-const LOOP_INTERVAL_MS = 30_000;
-const EXECUTION_CONFIDENCE_THRESHOLD = 0.65;
+const LOOP_INTERVAL_MS = Number(process.env.AGENT_LOOP_INTERVAL_MS ?? "10000");
+const EXECUTION_CONFIDENCE_THRESHOLD = Number(process.env.EXECUTION_CONFIDENCE_THRESHOLD ?? "0.6");
 const DEFAULT_NOTIONAL_USD = Number(process.env.PAPER_TRADE_NOTIONAL_USD ?? "250");
 const DEFAULT_COOLDOWN_MINUTES = Number(process.env.TRADE_COOLDOWN_MINUTES ?? "30");
 const STRATEGY_NAME = "kraken-confluence-v1";
 
 class AgentEngine {
   private state: AgentRuntimeState = "stopped";
+  private timeframe: MarketTimeframeKey = normalizeTimeframe(process.env.AGENT_TIMEFRAME);
   private startedAt: number | null = null;
   private timer: NodeJS.Timeout | null = null;
   private lastRunAt: number | null = null;
@@ -24,6 +30,7 @@ class AgentEngine {
     return {
       status: this.state,
       strategy: STRATEGY_NAME,
+      timeframe: this.timeframe,
       uptime:
         this.state === "running" && this.startedAt !== null
           ? Math.floor((Date.now() - this.startedAt) / 1000)
@@ -53,6 +60,10 @@ class AgentEngine {
       this.lastRunAt = null;
       this.lastError = null;
     }
+  }
+
+  setTimeframe(nextTimeframe: string | undefined) {
+    this.timeframe = normalizeTimeframe(nextTimeframe);
   }
 
   private clearTimer() {
@@ -96,7 +107,7 @@ class AgentEngine {
   }
 
   private async processMarket(symbol: string) {
-    const snapshot = await getMarketSnapshot(symbol);
+    const snapshot = await getMarketSnapshot(symbol, this.timeframe);
 
     await db.insert(agentDecisionsTable).values({
       symbol: snapshot.symbol,
@@ -108,7 +119,7 @@ class AgentEngine {
       strategy: STRATEGY_NAME,
     });
 
-    if (!snapshot.decision.executed || snapshot.decision.confidence <= EXECUTION_CONFIDENCE_THRESHOLD) {
+    if (!snapshot.decision.executed || snapshot.decision.confidence < EXECUTION_CONFIDENCE_THRESHOLD) {
       return;
     }
 
@@ -116,6 +127,8 @@ class AgentEngine {
     if (side !== "buy" && side !== "sell") {
       return;
     }
+
+    await this.closeOpposingTrades(snapshot.symbol, side, snapshot.price);
 
     if (await this.isCoolingDown(snapshot.symbol, side)) {
       return;
@@ -150,6 +163,48 @@ class AgentEngine {
       .limit(1);
 
     return Boolean(recentTrade);
+  }
+
+  private async closeOpposingTrades(symbol: string, nextSide: "buy" | "sell", marketPrice: number) {
+    const opposingSide = nextSide === "buy" ? "sell" : "buy";
+
+    const openOpposingTrades = await db
+      .select()
+      .from(tradesTable)
+      .where(
+        and(
+          eq(tradesTable.symbol, symbol),
+          eq(tradesTable.status, "open"),
+          eq(tradesTable.side, opposingSide),
+        ),
+      )
+      .orderBy(desc(tradesTable.createdAt));
+
+    for (const trade of openOpposingTrades) {
+      const entryPrice = Number(trade.price);
+      const quantity = Number(trade.quantity);
+
+      if (!Number.isFinite(entryPrice) || !Number.isFinite(quantity)) {
+        continue;
+      }
+
+      const pnl =
+        trade.side === "buy"
+          ? (marketPrice - entryPrice) * quantity
+          : (entryPrice - marketPrice) * quantity;
+      const nextNotes = trade.notes
+        ? `${trade.notes} | auto-closed @ ${marketPrice.toFixed(4)}`
+        : `auto-closed @ ${marketPrice.toFixed(4)}`;
+
+      await db
+        .update(tradesTable)
+        .set({
+          pnl: pnl.toFixed(8),
+          status: "closed",
+          notes: nextNotes,
+        })
+        .where(eq(tradesTable.id, trade.id));
+    }
   }
 }
 

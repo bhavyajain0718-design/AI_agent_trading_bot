@@ -14,10 +14,11 @@ function formatCompactPrice(value: number) {
 
 export default function Markets() {
   const [selectedSymbol, setSelectedSymbol] = useState("BTC/USD");
+  const [selectedTimeframe, setSelectedTimeframe] = useState("1h");
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["market-overview", selectedSymbol],
-    queryFn: () => fetchMarketOverview(selectedSymbol),
-    refetchInterval: 30_000,
+    queryKey: ["market-overview", selectedSymbol, selectedTimeframe],
+    queryFn: () => fetchMarketOverview(selectedSymbol, selectedTimeframe),
+    refetchInterval: 5000,
   });
 
   const chartData =
@@ -40,23 +41,49 @@ export default function Markets() {
             Real-time exchange data + transparent agent scoring
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {(data?.availableSymbols ?? ["BTC/USD", "ETH/USD", "SOL/USD", "AVAX/USD", "LINK/USD"]).map((symbol) => (
-            <Button
-              key={symbol}
-              variant="outline"
-              size="sm"
-              className={cn(
-                "font-mono",
-                selectedSymbol === symbol
-                  ? "border-primary/50 bg-primary/10 text-primary"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => setSelectedSymbol(symbol)}
-            >
-              {symbol}
-            </Button>
-          ))}
+        <div className="flex flex-col items-start gap-3 md:items-end">
+          <div className="flex flex-wrap gap-2">
+            {(data?.availableSymbols ?? ["BTC/USD", "ETH/USD", "SOL/USD", "AVAX/USD", "LINK/USD"]).map((symbol) => (
+              <Button
+                key={symbol}
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "font-mono",
+                  selectedSymbol === symbol
+                    ? "border-primary/50 bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setSelectedSymbol(symbol)}
+              >
+                {symbol}
+              </Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(data?.availableTimeframes ?? [
+              { key: "5m", label: "5M" },
+              { key: "10m", label: "10M" },
+              { key: "30m", label: "30M" },
+              { key: "1h", label: "1H" },
+              { key: "1d", label: "1D" },
+            ]).map((timeframe) => (
+              <Button
+                key={timeframe.key}
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "font-mono",
+                  selectedTimeframe === timeframe.key
+                    ? "border-primary/50 bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setSelectedTimeframe(timeframe.key)}
+              >
+                {timeframe.label}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 

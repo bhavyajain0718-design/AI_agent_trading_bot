@@ -1,17 +1,26 @@
 import { Router, type IRouter } from "express";
 import { desc } from "drizzle-orm";
 import { db, agentDecisionsTable } from "@workspace/db";
-import { TRACKED_MARKETS, getAllMarketSnapshots, getMarketSnapshot } from "../lib/market-data";
+import {
+  MARKET_TIMEFRAMES,
+  TRACKED_MARKETS,
+  getAllMarketSnapshots,
+  getMarketSnapshot,
+  normalizeTimeframe,
+} from "../lib/market-data";
 
 const router: IRouter = Router();
 
 router.get("/market/overview", async (req, res): Promise<void> => {
   const requestedSymbol =
     typeof req.query["symbol"] === "string" ? req.query["symbol"] : TRACKED_MARKETS[0].symbol;
+  const timeframe = normalizeTimeframe(
+    typeof req.query["timeframe"] === "string" ? req.query["timeframe"] : undefined,
+  );
 
   const [selectedMarketResult, allMarkets, recentDecisions] = await Promise.all([
-    getMarketSnapshot(requestedSymbol).catch(() => null),
-    getAllMarketSnapshots(),
+    getMarketSnapshot(requestedSymbol, timeframe).catch(() => null),
+    getAllMarketSnapshots(timeframe),
     db
       .select()
       .from(agentDecisionsTable)
@@ -43,9 +52,13 @@ router.get("/market/overview", async (req, res): Promise<void> => {
     generatedAt: new Date().toISOString(),
     selectedSymbol: selectedMarket.symbol,
     availableSymbols: TRACKED_MARKETS.map((market) => market.symbol),
+    availableTimeframes: Object.entries(MARKET_TIMEFRAMES).map(([key, value]) => ({
+      key,
+      label: value.label,
+    })),
     chart: {
       symbol: selectedMarket.symbol,
-      timeframe: "1H",
+      timeframe: MARKET_TIMEFRAMES[timeframe].label,
       candles: selectedMarket.candles.map((candle: (typeof selectedMarket.candles)[number]) => ({
         time: new Date(candle.time * 1000).toISOString(),
         open: candle.open,

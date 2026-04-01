@@ -10,6 +10,7 @@ import Chain from "@/pages/chain";
 import Agent from "@/pages/agent";
 import { AppLayout } from "@/components/app-layout";
 import { useEffect } from "react";
+import { WalletProvider } from "@/hooks/use-wallet";
 
 const queryClient = new QueryClient();
 
@@ -39,12 +40,14 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ForceDark />
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
+      <WalletProvider>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </WalletProvider>
     </QueryClientProvider>
   );
 }

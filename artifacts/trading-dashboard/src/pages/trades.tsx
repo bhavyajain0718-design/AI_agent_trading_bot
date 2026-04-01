@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useListTrades, useSettleTrade } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7,32 +7,56 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Link as LinkIcon, Loader2, ArrowUpRight, ArrowDownRight, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { getListTradesQueryKey } from "@workspace/api-client-react";
+import { WalletMenu } from "@/components/wallet-menu";
+import { useWallet } from "@/hooks/use-wallet";
+import { WalletGate } from "@/components/wallet-gate";
+
+const SEPOLIA_ETHERSCAN_BASE = "https://sepolia.etherscan.io";
+
+function isExplorerHash(txHash: string) {
+  return txHash.startsWith("0x");
+}
 
 export default function Trades() {
   const [symbolFilter, setSymbolFilter] = useState("");
-  const { data: trades, isLoading } = useListTrades({ symbol: symbolFilter || undefined });
+  const { data: trades, isLoading } = useListTrades(
+    { symbol: symbolFilter || undefined },
+    { query: { refetchInterval: 1000 } },
+  );
   const [settleTradeId, setSettleTradeId] = useState<number | null>(null);
+  const { connectedWallet } = useWallet();
 
   const filteredTrades = Array.isArray(trades) ? trades : [];
+
+  if (!connectedWallet) {
+    return (
+      <WalletGate
+        title="Trades Locked"
+        description="Connect a wallet first to open the trade ledger. Wallet connection determines which settlements and portfolio data belong to this session."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-mono font-bold tracking-tight text-primary uppercase">Trade Ledger</h2>
-        <div className="flex items-center gap-2 max-w-xs w-full">
-          <Search className="h-4 w-4 text-muted-foreground absolute ml-3" />
-          <Input 
-            placeholder="Filter by symbol..." 
-            className="pl-9 font-mono text-sm bg-card/50"
-            value={symbolFilter}
-            onChange={(e) => setSymbolFilter(e.target.value)}
-          />
+        <div className="flex items-center gap-3">
+          <WalletMenu />
+          <div className="flex items-center gap-2 max-w-xs w-full relative">
+            <Search className="h-4 w-4 text-muted-foreground absolute ml-3" />
+            <Input 
+              placeholder="Filter by symbol..." 
+              className="pl-9 font-mono text-sm bg-card/50"
+              value={symbolFilter}
+              onChange={(e) => setSymbolFilter(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
@@ -121,14 +145,20 @@ export default function Trades() {
                           </Button>
                         )}
                         {trade.status === "settled" && trade.chainTxHash && (
-                          <a 
-                            href={`https://etherscan.io/tx/${trade.chainTxHash}`} 
-                            target="_blank" 
-                            rel="noreferrer"
-                            className="text-[10px] text-muted-foreground hover:text-primary transition-colors underline decoration-border underline-offset-4"
-                          >
-                            {trade.chainTxHash.substring(0,6)}...{trade.chainTxHash.substring(trade.chainTxHash.length-4)}
-                          </a>
+                          isExplorerHash(trade.chainTxHash) ? (
+                            <a 
+                              href={`${SEPOLIA_ETHERSCAN_BASE}/tx/${trade.chainTxHash}`} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="text-[10px] text-muted-foreground hover:text-primary transition-colors underline decoration-border underline-offset-4"
+                            >
+                              {trade.chainTxHash.substring(0,6)}...{trade.chainTxHash.substring(trade.chainTxHash.length-4)}
+                            </a>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground">
+                              {trade.chainTxHash}
+                            </span>
+                          )
                         )}
                       </TableCell>
                     </TableRow>
@@ -144,6 +174,7 @@ export default function Trades() {
         <SettleTradeDialog 
           tradeId={settleTradeId} 
           trade={filteredTrades.find(t => t.id === settleTradeId)}
+          connectedWallet={connectedWallet}
           open={!!settleTradeId} 
           onOpenChange={(open) => !open && setSettleTradeId(null)} 
         />
@@ -152,20 +183,40 @@ export default function Trades() {
   );
 }
 
-function SettleTradeDialog({ tradeId, trade, open, onOpenChange }: { tradeId: number, trade: any, open: boolean, onOpenChange: (open: boolean) => void }) {
+function SettleTradeDialog({
+  tradeId,
+  trade,
+  connectedWallet,
+  open,
+  onOpenChange,
+}: {
+  tradeId: number,
+  trade: any,
+  connectedWallet: string | null,
+  open: boolean,
+  onOpenChange: (open: boolean) => void
+}) {
   const settleTrade = useSettleTrade();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
-  const [wallet, setWallet] = useState("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
-  const [pnl, setPnl] = useState(trade?.pnl || "0.00");
+
+  const displayedPnl = trade?.pnl ?? "0.00";
 
   const handleSettle = () => {
+    if (!connectedWallet) {
+      toast({
+        title: "CONNECT WALLET FIRST",
+        description: "Settlement uses the connected wallet address and it cannot be edited manually.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     settleTrade.mutate({
       id: tradeId,
       data: {
-        walletAddress: wallet,
-        pnl: pnl,
+        walletAddress: connectedWallet,
+        pnl: displayedPnl,
       }
     }, {
       onSuccess: () => {
@@ -203,24 +254,31 @@ function SettleTradeDialog({ tradeId, trade, open, onOpenChange }: { tradeId: nu
             <Label htmlFor="wallet" className="text-right font-mono text-xs text-muted-foreground">
               WALLET
             </Label>
-            <Input
-              id="wallet"
-              value={wallet}
-              onChange={(e) => setWallet(e.target.value)}
-              className="col-span-3 font-mono text-xs"
-            />
+            <div className="col-span-3 flex items-center gap-2">
+              <Input
+                id="wallet"
+                value={connectedWallet ?? "Not connected"}
+                readOnly
+                className="font-mono text-xs"
+              />
+            </div>
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="pnl" className="text-right font-mono text-xs text-muted-foreground">
-              FINAL P&L
+              LIVE P&L
             </Label>
             <Input
               id="pnl"
-              value={pnl}
-              onChange={(e) => setPnl(e.target.value)}
+              value={displayedPnl}
+              readOnly
               className="col-span-3 font-mono text-xs"
             />
           </div>
+          {!connectedWallet ? (
+            <p className="text-[10px] font-mono uppercase text-muted-foreground">
+              Connect a wallet from the page header before executing settlement.
+            </p>
+          ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} className="font-mono text-xs">
@@ -228,7 +286,7 @@ function SettleTradeDialog({ tradeId, trade, open, onOpenChange }: { tradeId: nu
           </Button>
           <Button 
             onClick={handleSettle} 
-            disabled={settleTrade.isPending}
+            disabled={settleTrade.isPending || !connectedWallet}
             className="font-mono text-xs bg-[hsl(270,100%,65%)] text-white hover:bg-[hsl(270,100%,65%,0.8)]"
           >
             {settleTrade.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

@@ -8,24 +8,64 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useWallet } from "@/hooks/use-wallet";
+import { WalletGate } from "@/components/wallet-gate";
 
 async function patchAgentStatus(status: "running" | "paused" | "stopped") {
+  const timeframe = window.localStorage.getItem("agent-timeframe") ?? "1h";
   const res = await fetch("/api/agent/status", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, timeframe }),
   });
   if (!res.ok) throw new Error("Failed to update agent status");
   return res.json();
 }
 
+async function fetchAgentConfig() {
+  const res = await fetch("/api/agent/config", {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error("Failed to fetch agent config");
+  }
+  return res.json() as Promise<{
+    timeframe: string;
+    availableTimeframes: Array<{ key: string; label: string }>;
+  }>;
+}
+
+async function patchAgentTimeframe(timeframe: string, status: "running" | "paused" | "stopped") {
+  const res = await fetch("/api/agent/status", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, timeframe }),
+  });
+  if (!res.ok) {
+    throw new Error("Failed to update agent timeframe");
+  }
+  return res.json();
+}
+
 export default function Agent() {
+  const { connectedWallet } = useWallet();
   const queryClient = useQueryClient();
-  const { data: status, isLoading: loadingStatus } = useGetAgentStatus({ query: { refetchInterval: 5000 } });
-  const { data: decisions, isLoading: loadingDecisions } = useListAgentDecisions({ limit: 20 }, { query: { refetchInterval: 10000 } });
+  const { data: status, isLoading: loadingStatus } = useGetAgentStatus({ query: { refetchInterval: 3000 } });
+  const { data: decisions, isLoading: loadingDecisions } = useListAgentDecisions({ limit: 20 }, { query: { refetchInterval: 5000 } });
   const { toast } = useToast();
   const recentDecisions = Array.isArray(decisions) ? decisions : [];
   const [displayUptime, setDisplayUptime] = useState(0);
+  const [selectedTimeframe, setSelectedTimeframe] = useState("1h");
+  const [availableTimeframes, setAvailableTimeframes] = useState<Array<{ key: string; label: string }>>([]);
+
+  if (!connectedWallet) {
+    return (
+      <WalletGate
+        title="Agent Control Locked"
+        description="Connect a wallet first to access autonomous trading controls. Agent execution and settlements should be tied to an active wallet session."
+      />
+    );
+  }
 
   const { mutate: changeState, isPending } = useMutation({
     mutationFn: patchAgentStatus,
@@ -52,6 +92,19 @@ export default function Agent() {
   }, [status?.uptime, currentState]);
 
   useEffect(() => {
+    void fetchAgentConfig()
+      .then((config) => {
+        setSelectedTimeframe(config.timeframe);
+        setAvailableTimeframes(config.availableTimeframes);
+        window.localStorage.setItem("agent-timeframe", config.timeframe);
+      })
+      .catch(() => {
+        const stored = window.localStorage.getItem("agent-timeframe") ?? "1h";
+        setSelectedTimeframe(stored);
+      });
+  }, []);
+
+  useEffect(() => {
     if (currentState !== "running") {
       return;
     }
@@ -62,6 +115,26 @@ export default function Agent() {
 
     return () => window.clearInterval(interval);
   }, [currentState]);
+
+  const handleTimeframeChange = (timeframe: string) => {
+    setSelectedTimeframe(timeframe);
+    window.localStorage.setItem("agent-timeframe", timeframe);
+
+    void patchAgentTimeframe(timeframe, currentState)
+      .then(() => {
+        toast({
+          title: `TIMEFRAME ${timeframe.toUpperCase()}`,
+          description: "Agent execution window updated.",
+        });
+      })
+      .catch(() => {
+        toast({
+          title: "TIMEFRAME UPDATE FAILED",
+          description: "Could not apply the selected execution timeframe.",
+          variant: "destructive",
+        });
+      });
+  };
 
   return (
     <div className="space-y-6">
@@ -146,6 +219,36 @@ export default function Agent() {
               <div className="text-[10px] font-mono text-muted-foreground uppercase mb-1">Active Strategy</div>
               <div className="font-mono text-sm text-primary bg-primary/5 p-2 rounded border border-primary/20">
                 {loadingStatus ? <Skeleton className="h-5 w-32" /> : status?.strategy}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-mono text-muted-foreground uppercase mb-2">Execution Timeframe</div>
+              <div className="flex flex-wrap gap-2">
+                {(availableTimeframes.length > 0
+                  ? availableTimeframes
+                  : [
+                      { key: "5m", label: "5M" },
+                      { key: "10m", label: "10M" },
+                      { key: "30m", label: "30M" },
+                      { key: "1h", label: "1H" },
+                      { key: "1d", label: "1D" },
+                    ]).map((timeframe) => (
+                  <Button
+                    key={timeframe.key}
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "font-mono text-xs",
+                      selectedTimeframe === timeframe.key
+                        ? "border-primary/50 bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:text-foreground",
+                    )}
+                    onClick={() => handleTimeframeChange(timeframe.key)}
+                  >
+                    {timeframe.label}
+                  </Button>
+                ))}
               </div>
             </div>
 
