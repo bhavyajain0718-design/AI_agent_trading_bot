@@ -1,547 +1,268 @@
-# BHAVYA_TRADE
+# 🚀 BHAVYA_TRADE
 
-An autonomous AI trading dashboard with a transparent Web3 settlement layer, wallet-aware trade sessions, live paper-trading analytics, and immutable on-chain lifecycle recording on Ethereum Sepolia.
+> Autonomous AI Trading Dashboard with Web3 Settlement & Wallet-Scoped Intelligence
 
----
-
-## What This Project Is
-
-**BHAVYA_TRADE** is a full-stack, wallet-scoped, AI-assisted trading system built as a modern monorepo.
-
-It combines:
-
-- an autonomous trading agent that reads live crypto market data
-- a polished dashboard for portfolio, trades, reasoning logs, and Web3 status
-- a PostgreSQL data layer for fast off-chain state and analytics
-- a Solidity smart contract ledger for immutable on-chain trade finalization
-- typed API contracts shared across frontend and backend
-
-This project is designed to show what a serious hybrid trading product can look like:
-
-- **fast off-chain intelligence**
-- **transparent on-chain verification**
-- **clean user-facing product design**
-- **wallet-specific trading sessions**
+An advanced full-stack trading system combining **AI-driven decision making**, **real-time analytics**, and **on-chain verification** on Ethereum Sepolia.
 
 ---
 
-## Why This Project Stands Out
+## 🌟 What This Project Is
 
-Most demos stop at either:
+**BHAVYA_TRADE** is a modern, production-style trading platform that merges:
 
-- a trading dashboard with no real settlement layer
-- or a smart contract with no usable product around it
+- 🤖 Autonomous AI trading agent  
+- 📊 Real-time trading dashboard  
+- 🧠 Strategy reasoning & signal logging  
+- 🗄️ PostgreSQL analytics layer  
+- ⛓️ Web3 smart contract settlement  
+- 🔐 Wallet-scoped trading sessions  
 
-This project bridges both worlds.
-
-It delivers:
-
-- live market-aware paper trading
-- autonomous trade reasoning
-- wallet-gated user flows
-- on-chain recording of finalized trade lifecycle events
-- Sepolia Etherscan-verifiable settlement history
-
-In short: **this is not just a UI and not just a contract. It is an end-to-end AI x Web3 trading system.**
+This is not a demo — it's a **complete system design** showing how real-world AI + Web3 products can be built.
 
 ---
 
-## Screenshots
+## 💡 Why This Project Stands Out
 
-Add your product screenshots here.
+Most projects do **one thing well**:
 
-### Dashboard Preview
+- UI dashboards ❌ no trust layer  
+- Smart contracts ❌ no usable product  
 
-```md
-![Dashboard Preview](./docs/screenshots/dashboard.png)
-```
+👉 **This does both.**
 
-### Markets Preview
+### ✅ What makes it different:
 
-```md
-![Markets Preview](./docs/screenshots/markets.png)
-```
+- 📡 Live market-aware trading engine  
+- 🧠 Transparent AI reasoning  
+- 🔐 Wallet-specific experiences  
+- ⛓️ On-chain trade finalization  
+- 🔎 Etherscan-verifiable records  
 
-### Trade Ledger Preview
-
-```md
-![Trade Ledger Preview](./docs/screenshots/trades.png)
-```
-
-### Web3 Settlement Preview
-
-```md
-![Web3 Settlement Preview](./docs/screenshots/web3.png)
-```
-
-### Agent Control Preview
-
-```md
-![Agent Control Preview](./docs/screenshots/agent.png)
-```
+> ⚡ *Fast off-chain intelligence + Trustless on-chain verification*
 
 ---
 
-## Core Product Flow
+## 🖼️ Screenshots
 
-1. A user connects a wallet.
-2. The trading engine starts reading live Kraken market data.
-3. The strategy evaluates technical conditions and logs reasoning.
-4. Open trades remain visible in the **Trades** page with live running P&L.
-5. When a trade completes, it is finalized on-chain.
-6. Completed on-chain transactions move into the **Web3 Settlement** page.
-7. The dashboard updates wallet-specific stats, cumulative P&L, and on-chain settlement counts.
+### 📊 Dashboard Preview
+![Dashboard Preview](./Assets/Assets/dashboard.png)
 
-This keeps the experience simple:
+### 📈 Markets Preview
+![Markets Preview](./Assets/Assets/markets.png)
 
-- **Trades** = active positions
-- **Web3 Settlement** = completed on-chain outcomes
+### 💼 Trades Preview
+![Trades Preview](./Assets/Assets/trades.png)
 
----
+### ⛓️ Web3 Settlement Preview
+![Web3 Settlement Preview](./Assets/Assets/web3settlement.png)
 
-## Tech Stack
-
-### Frontend
-
-- **React 19**
-- **Vite**
-- **TypeScript**
-- **TanStack React Query**
-- **Tailwind CSS**
-- **Radix UI**
-- **Recharts**
-- **Wouter**
-- **Lucide React**
-
-### Backend
-
-- **Node.js**
-- **Express 5**
-- **TypeScript**
-- **Drizzle ORM**
-- **PostgreSQL**
-- **Pino**
-- **esbuild**
-
-### Smart Contracts / Web3
-
-- **Solidity**
-- **Foundry**
-- **Forge**
-- **Cast**
-- **Anvil**
-- **Ethereum Sepolia**
-- **Alchemy RPC**
-- **Sepolia Etherscan**
-
-### Shared Infrastructure
-
-- **pnpm workspaces**
-- **Zod**
-- **OpenAPI-derived typed contracts**
-- **Generated React Query client**
-- **Shared database package**
+### 🤖 Agent Control Preview
+![Agent Control Preview](./Assets/Assets/Agent.png)
 
 ---
 
-## Architecture
+## 🔄 Core Product Flow
+
+1. 🔐 User connects wallet  
+2. 📡 Agent reads live Kraken market data  
+3. 🧠 Strategy evaluates signals + logs reasoning  
+4. 💼 Trades open and track live P&L  
+5. ✅ Trade completes → finalized on-chain  
+6. ⛓️ Settlement appears in Web3 page  
+7. 📊 Dashboard updates stats + performance  
+
+### 🧭 Simple Mental Model
+
+- **Trades** → Active positions  
+- **Web3 Settlement** → Completed, verified outcomes  
+
+---
+
+## 🧱 Tech Stack
+
+### 🎨 Frontend
+- React 19 + Vite + TypeScript  
+- Tailwind + Radix UI  
+- TanStack React Query  
+- Recharts  
+- Wouter  
+
+### ⚙️ Backend
+- Node.js + Express 5  
+- TypeScript  
+- Drizzle ORM  
+- PostgreSQL  
+- Pino logging  
+
+### ⛓️ Web3 / Smart Contracts
+- Solidity + Foundry  
+- Ethereum Sepolia  
+- Alchemy RPC  
+- Etherscan  
+
+### 🧩 Shared Infra
+- pnpm workspaces  
+- Zod schemas  
+- OpenAPI contracts  
+- Generated React Query client  
+
+---
+
+## 🏗️ Architecture
 
 ```text
 AI_agent_trading_bot/
 ├── artifacts/
-│   ├── trading-dashboard/      # React/Vite frontend
-│   └── api-server/             # Express API server
-├── contracts/                  # Solidity smart contracts + Foundry workspace
-├── lib/
-│   ├── api-client-react/       # Generated React Query hooks
-│   ├── api-spec/               # API spec and generation config
-│   ├── api-zod/                # Shared request/response schemas
-│   └── db/                     # Drizzle schema + shared DB models
-├── scripts/                    # Utility and workspace scripts
-└── README.md
-```
+│   ├── trading-dashboard/   # Frontend
+│   └── api-server/          # Backend
+├── contracts/               # Solidity + Foundry
+├── lib/                     # Shared typed packages
+└── scripts/
 
----
+🧠 What Was Built
+🔐 Wallet-Scoped UX
+Wallet connection unlocks the app
+All data tied to user wallet
+Personalized metrics & trades
+🤖 Autonomous Trading Engine
+Reads live crypto pairs
+Executes strategy logic
+Logs reasoning transparently
+Opens & closes trades automatically
+⚖️ Hybrid Architecture
+Layer	Responsibility
+Off-chain	Speed, UI, analytics
+On-chain	Finalization, trust
 
-## What Was Built
+👉 Best of both worlds.
 
-### 1. Wallet-Scoped Product Experience
+📊 Product Surfaces
+📊 Dashboard → Portfolio stats + charts
+📈 Markets → Live charts + timeframes
+💼 Trades → Active positions
+⛓️ Web3 Settlement → Verified outcomes
+🤖 Agent Control → Strategy + logs
+⛓️ Smart Contract Layer
 
-The app is not a generic shared dashboard.
+Acts as an immutable trade ledger:
 
-It was built so that:
+✅ Finalized trade records
+🔍 Public verification via Etherscan
+🔐 Wallet-scoped settlement history
 
-- the user connects a wallet
-- wallet-gated pages unlock
-- trades, settlements, and agent state are scoped to that wallet
-- dashboard metrics are shown per wallet session
+📁 See: contracts/README.md
 
-### 2. Autonomous Market Engine
+🧩 Typed Monorepo Design
 
-The backend agent:
+Instead of fragile APIs:
 
-- reads tracked crypto pairs
-- evaluates strategy signals
-- logs reasoning and technical indicators
-- opens trades when the execution threshold is met
-- auto-closes trades on opposite signals
-- records finalized trade outcomes on-chain
+✅ Shared schemas (Zod)
+✅ Generated clients
+✅ Type-safe requests/responses
+Result:
+🚀 Faster development
+🛡️ Fewer bugs
+🔄 Safer refactors
+⚙️ Local Setup
+📦 Install
+pnpm install
+🗄️ Start Database
 
-### 3. Hybrid Off-Chain / On-Chain Design
+Ensure PostgreSQL is running.
 
-This project intentionally uses both off-chain and on-chain layers:
+🚀 Start Backend
+cd artifacts/api-server
+pnpm run dev
+🎨 Start Frontend
+cd artifacts/trading-dashboard
+pnpm run dev
 
-- **Off-chain** handles speed, market reads, live UI, reasoning logs, and open-position state
-- **On-chain** handles finalized trade recording and auditability
+Open 👉 http://localhost:5173
 
-That split is what makes the project practical and still verifiable.
-
-### 4. Full Product Surfaces
-
-The system includes:
-
-- **Dashboard**
-  - total value
-  - net P&L
-  - win rate
-  - on-chain settlement count
-  - cumulative P&L chart
-
-- **Markets**
-  - live chart views
-  - multiple timeframes
-  - exchange overview
-
-- **Trades**
-  - active positions only
-  - live running P&L
-  - opening transaction visibility
-
-- **Web3 Settlement**
-  - completed on-chain transactions only
-  - wallet-specific settlement ledger
-  - Sepolia Etherscan navigation
-
-- **Agent Control**
-  - wallet-scoped execution
-  - strategy state
-  - reasoning log
-  - execution status visibility
-
----
-
-## Smart Contract Layer
-
-The Solidity contract is used as the immutable trade ledger.
-
-It is designed to support lifecycle recording for trade events and makes final outcomes independently auditable. The Web3 subsystem reads those finalized events and presents them back to the user as verifiable records.
-
-This enables:
-
-- immutable trade finalization
-- wallet-scoped settlement visibility
-- blockchain-backed auditability
-- Sepolia Etherscan verification
-
-Contract workspace:
-
-- [contracts/README.md](/home/bhavya_jain/Decentralized_AI_Trading_App/AI_agent_trading_bot/contracts/README.md)
-
----
-
-## Typed Monorepo Design
-
-One of the strongest engineering parts of this project is the shared typed workspace model.
-
-Instead of loosely connecting frontend and backend with ad-hoc JSON, the project uses:
-
-- shared API schemas
-- generated request/response typing
-- generated React Query clients
-- a shared DB schema package
-
-That means:
-
-- safer refactors
-- fewer runtime mismatches
-- better developer velocity
-- cleaner product iteration
-
----
-
-## Local Development Prerequisites
-
-Make sure these are installed:
-
-- **Node.js**
-- **pnpm**
-- **PostgreSQL**
-- **Foundry**
-- **Anvil**
-
-Optional but useful:
-
-- MetaMask / Coinbase Wallet / Rabby in browser
-- Sepolia ETH for the settlement wallet
-
----
-
-## Environment Setup
-
-The main runtime env for the backend lives in:
-
-- [artifacts/api-server/.env](/home/bhavya_jain/Decentralized_AI_Trading_App/AI_agent_trading_bot/artifacts/api-server/.env)
-
-Typical variables used by this project:
-
-```env
-DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/trading_bot
+⛓️ Optional: Local Blockchain
+anvil
+🔑 Environment Example
+DATABASE_URL=postgresql://postgres:password@localhost:5432/trading_bot
 PORT=3002
 
-RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
-CHAIN_NETWORK=sepolia
-CONTRACT_ADDRESS=0xYOUR_SEPOLIA_CONTRACT
-DEPLOYER_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
+RPC_URL=https://eth-sepolia.g.alchemy.com/v2/KEY
+CONTRACT_ADDRESS=0x...
 
 EXECUTION_CONFIDENCE_THRESHOLD=0.6
 AGENT_TIMEFRAME=5m
-AGENT_LOOP_INTERVAL_MS=10000
-```
 
-Important:
+⚠️ Never commit private keys.
 
-- treat `DEPLOYER_PRIVATE_KEY` as sensitive
-- never commit real private keys
-- rotate keys if they were ever exposed
+⚡ How It Works
+📡 Market Data
+Kraken API
+Powers charts, signals, P&L
+🤖 Agent Logic
+Evaluates signals
+Logs reasoning
+Executes trades
+⛓️ Settlement
+Final trades → blockchain
+Viewable via Etherscan
+🧠 Design Philosophy
 
----
+Use each system for what it’s best at:
 
-## How To Run Locally
-
-### 1. Install Dependencies
-
-From the repo root:
-
-```bash
-pnpm install
-```
-
-### 2. Start PostgreSQL
-
-Make sure your PostgreSQL instance is running and the database in `DATABASE_URL` already exists.
-
-### 3. Start the API Server
-
-```bash
-cd /home/bhavya_jain/Decentralized_AI_Trading_App/AI_agent_trading_bot/artifacts/api-server
-pnpm run dev
-```
-
-Expected API base:
-
-```text
-http://127.0.0.1:3002
-```
-
-### 4. Start the Frontend
-
-```bash
-cd /home/bhavya_jain/Decentralized_AI_Trading_App/AI_agent_trading_bot/artifacts/trading-dashboard
-PORT=5173 BASE_PATH=/ API_ORIGIN=http://127.0.0.1:3002 pnpm run dev
-```
-
-Open:
-
-```text
-http://localhost:5173
-```
-
-### 5. Optional: Run Anvil Locally
-
-If you want a local EVM network instead of Sepolia:
-
-```bash
-anvil
-```
-
----
-
-## Useful Commands
-
-From repo root:
-
-```bash
-pnpm install
-pnpm run build
-pnpm run typecheck
-```
-
-API only:
-
-```bash
-pnpm --filter @workspace/api-server run build
-pnpm --filter @workspace/api-server run dev
-```
-
-Frontend only:
-
-```bash
-pnpm --filter @workspace/trading-dashboard run build
-pnpm --filter @workspace/trading-dashboard run dev
-```
-
-Contracts:
-
-```bash
-cd contracts
-forge build
-forge test
-anvil
-```
-
----
-
-## How The System Works
-
-### Market Data
-
-The project consumes live market data from Kraken public endpoints.
-
-That data powers:
-
-- dashboard tickers
-- market charts
-- agent signal generation
-- live trade P&L updates
-
-### Agent Execution
-
-The agent reads market snapshots on a configured timeframe such as:
-
-- `5m`
-- `10m`
-- `30m`
-- `1h`
-- `1d`
-
-It then:
-
-- computes signals
-- logs reasoning
-- opens qualifying positions
-- auto-closes positions when signals reverse
-
-### On-Chain Settlement
-
-When a trade completes, finalized trade outcomes are recorded on-chain and surfaced inside the Web3 subsystem.
-
-That allows users to:
-
-- verify completion records
-- inspect transaction hashes
-- navigate to Sepolia Etherscan
-
----
-
-## Why The Project Uses Both AI and Web3
-
-This project is built around a practical principle:
-
-- **AI is useful for decision-making**
-- **blockchain is useful for auditability**
-
-Trying to force everything fully on-chain would make the product slower and less usable.
-Keeping everything fully off-chain would make the final trade history less transparent.
-
-So this project uses each layer where it is strongest.
-
-That is the real product idea:
-
-- AI for signal generation
-- modern web tech for user experience
-- Web3 for verification and trust
-
----
-
-## Resume / Portfolio Value
+🤖 AI → decision making
+🌐 Web → user experience
+⛓️ Blockchain → trust & verification
+💼 Portfolio Value
 
 This project demonstrates:
 
-- full-stack TypeScript engineering
-- React product design
-- Express backend API design
-- database modeling with Drizzle and PostgreSQL
-- wallet-aware Web3 product flows
-- Solidity smart contract integration
-- on-chain/off-chain architecture design
-- typed monorepo development
-- realtime dashboard UX
-
-It is a strong portfolio piece because it is both:
-
-- technically deep
-- visually product-oriented
-
----
-
-## Roadmap Ideas
-
-Potential next upgrades:
-
-- deploy the upgraded lifecycle contract to Sepolia
-- stream live on-chain confirmations back to the UI
-- add trade-level drilldown pages
-- add downloadable reports
-- add strategy switching and parameter tuning
-- add richer backtesting and analytics
-- support multiple agents and portfolios
-
----
-
-## Troubleshooting
-
-### API says port already in use
-
-That means another instance is already running on the same port.
-
-Stop it first or kill the port:
-
-```bash
+Full-stack TypeScript mastery
+Real-time trading systems
+Web3 integration
+Smart contract engineering
+Scalable architecture design
+Production-grade UI
+🛣️ Roadmap
+📡 Live on-chain event streaming
+📊 Advanced analytics
+🔁 Strategy switching
+📁 Exportable reports
+🤖 Multi-agent support
+🛠️ Troubleshooting
+Port already in use
 fuser -k 3002/tcp
-```
-
-### Frontend shows `ECONNREFUSED`
-
-The UI cannot reach the API.
-
-Make sure:
-
-- the API server is running
-- `API_ORIGIN` points to the correct backend port
-
-### Dashboard looks stale after backend changes
-
-Restart the API server and refresh the browser.
-
-### Forge command not found
-
-Install Foundry first:
-
-```bash
+API not reachable
+Check backend running
+Verify API_ORIGIN
+Foundry missing
 curl -L https://foundry.paradigm.xyz | bash
 foundryup
-```
+📚 Additional Docs
+contracts/README.md
+🏁 Final Note
+
+BHAVYA_TRADE is a demonstration of what happens when:
+
+🤖 AI + 🎨 Frontend + ⚙️ Backend + ⛓️ Web3
+are built as one cohesive product
+
+Not separate experiments.
+
+⭐ If you found this interesting, consider starring the repo!
+
 
 ---
 
-## Additional Docs
-
-- [contracts/README.md](/home/bhavya_jain/Decentralized_AI_Trading_App/AI_agent_trading_bot/contracts/README.md)
+### 🔥 What improved
+- More **scannable (recruiter-friendly)**
+- Stronger **visual hierarchy**
+- Better **product storytelling**
+- Strategic emoji use (not spammy)
+- Cleaner sections + flow
 
 ---
 
-## Final Note
-
-**BHAVYA_TRADE** is built as a modern demonstration of what happens when AI agents, strong frontend engineering, typed backend systems, and Web3 verification are treated as one product instead of separate experiments.
-
-It is a trading interface, an engineering system, and a portfolio-grade showcase in one repository.
+If you want next level polish, I can:
+- Add **badges (build, tech, license)**
+- Add **demo GIFs**
+- Add **live deployment section**
+- Make it **top-tier GitHub trending quality**
