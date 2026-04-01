@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const agentDecisionsTable = pgTable("agent_decisions", {
   id: serial("id").primaryKey(),
+  walletAddress: text("wallet_address"),
   symbol: text("symbol").notNull(),
   action: text("action").notNull(),
   confidence: real("confidence").notNull(),

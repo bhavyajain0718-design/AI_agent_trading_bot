@@ -15,12 +15,21 @@ const router: IRouter = Router();
 
 router.get("/agent/decisions", async (req, res): Promise<void> => {
   const limit = Number(req.query["limit"] ?? 20);
+  const requestedWalletAddress =
+    typeof req.query["walletAddress"] === "string" ? req.query["walletAddress"].toLowerCase() : undefined;
 
-  const decisions = await db
-    .select()
-    .from(agentDecisionsTable)
-    .orderBy(desc(agentDecisionsTable.createdAt))
-    .limit(limit);
+  const decisions = requestedWalletAddress
+    ? await db
+        .select()
+        .from(agentDecisionsTable)
+        .where(eq(agentDecisionsTable.walletAddress, requestedWalletAddress))
+        .orderBy(desc(agentDecisionsTable.createdAt))
+        .limit(limit)
+    : await db
+        .select()
+        .from(agentDecisionsTable)
+        .orderBy(desc(agentDecisionsTable.createdAt))
+        .limit(limit);
 
   const serialized = decisions.map((d: (typeof decisions)[number]) => ({
     ...d,
@@ -45,17 +54,22 @@ router.post("/agent/decisions", async (req, res): Promise<void> => {
   res.status(201).json(ListAgentDecisionsResponseItem.parse(decision));
 });
 
-router.get("/agent/status", async (_req, res): Promise<void> => {
+router.get("/agent/status", async (req, res): Promise<void> => {
   const runtime = agentEngine.getStatus();
+  const requestedWalletAddress =
+    typeof req.query["walletAddress"] === "string" ? req.query["walletAddress"].toLowerCase() : undefined;
   const [krakenConnected, web3Connected] = await Promise.all([
     checkKrakenConnectivity(),
     checkRpcConnectivity(),
   ]);
+  const matchesWallet =
+    !requestedWalletAddress ||
+    (runtime.activeWalletAddress !== null && runtime.activeWalletAddress === requestedWalletAddress);
   const status = {
-    status: runtime.status,
+    status: matchesWallet ? runtime.status : "stopped",
     strategy: runtime.strategy,
-    uptime: runtime.uptime,
-    krakenConnected: krakenConnected || runtime.krakenConnected,
+    uptime: matchesWallet ? runtime.uptime : 0,
+    krakenConnected: matchesWallet ? (krakenConnected || runtime.krakenConnected) : false,
     web3Connected,
     contractAddress: process.env["CONTRACT_ADDRESS"] ?? null,
     network: process.env["CHAIN_NETWORK"] ?? "anvil-local",
@@ -80,6 +94,8 @@ type AgentStateType = (typeof VALID_STATES)[number];
 
 router.patch("/agent/status", async (req, res): Promise<void> => {
   const requested = req.body?.status;
+  const requestedWalletAddress =
+    typeof req.body?.walletAddress === "string" ? req.body.walletAddress : undefined;
   const requestedTimeframe = normalizeTimeframe(
     typeof req.body?.timeframe === "string" ? req.body.timeframe : undefined,
   );
@@ -88,6 +104,12 @@ router.patch("/agent/status", async (req, res): Promise<void> => {
     return;
   }
 
+  if (requested === "running" && !requestedWalletAddress && !agentEngine.getStatus().activeWalletAddress) {
+    res.status(400).json({ error: "walletAddress is required when starting the agent" });
+    return;
+  }
+
+  agentEngine.setActiveWalletAddress(requestedWalletAddress);
   agentEngine.setState(requested as AgentStateType);
   agentEngine.setTimeframe(requestedTimeframe);
   const runtime = agentEngine.getStatus();

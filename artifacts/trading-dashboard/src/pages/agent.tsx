@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useGetAgentStatus, useListAgentDecisions, getGetAgentStatusQueryKey } from "@workspace/api-client-react";
+import { getGetAgentStatusQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,16 +7,16 @@ import { Play, Square, Pause, Cpu, Activity, Brain, Terminal } from "lucide-reac
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@/hooks/use-wallet";
 import { WalletGate } from "@/components/wallet-gate";
 
-async function patchAgentStatus(status: "running" | "paused" | "stopped") {
+async function patchAgentStatus(status: "running" | "paused" | "stopped", walletAddress: string) {
   const timeframe = window.localStorage.getItem("agent-timeframe") ?? "1h";
   const res = await fetch("/api/agent/status", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status, timeframe }),
+    body: JSON.stringify({ status, timeframe, walletAddress }),
   });
   if (!res.ok) throw new Error("Failed to update agent status");
   return res.json();
@@ -35,11 +35,11 @@ async function fetchAgentConfig() {
   }>;
 }
 
-async function patchAgentTimeframe(timeframe: string, status: "running" | "paused" | "stopped") {
+async function patchAgentTimeframe(timeframe: string, status: "running" | "paused" | "stopped", walletAddress: string) {
   const res = await fetch("/api/agent/status", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status, timeframe }),
+    body: JSON.stringify({ status, timeframe, walletAddress }),
   });
   if (!res.ok) {
     throw new Error("Failed to update agent timeframe");
@@ -50,29 +50,43 @@ async function patchAgentTimeframe(timeframe: string, status: "running" | "pause
 export default function Agent() {
   const { connectedWallet } = useWallet();
   const queryClient = useQueryClient();
-  const { data: status, isLoading: loadingStatus } = useGetAgentStatus({ query: { refetchInterval: 3000 } });
-  const { data: decisions, isLoading: loadingDecisions } = useListAgentDecisions({ limit: 20 }, { query: { refetchInterval: 5000 } });
+  const { data: status, isLoading: loadingStatus } = useQuery({
+    queryKey: ["/api/agent/status", connectedWallet],
+    enabled: Boolean(connectedWallet),
+    refetchInterval: 3000,
+    queryFn: async () => {
+      const response = await fetch(`/api/agent/status?walletAddress=${connectedWallet}`);
+      if (!response.ok) {
+        throw new Error("Failed to load wallet agent status");
+      }
+      return response.json();
+    },
+  });
+  const { data: decisions, isLoading: loadingDecisions } = useQuery({
+    queryKey: ["/api/agent/decisions", connectedWallet],
+    enabled: Boolean(connectedWallet),
+    refetchInterval: 5000,
+    queryFn: async () => {
+      const response = await fetch(`/api/agent/decisions?limit=20&walletAddress=${connectedWallet}`);
+      if (!response.ok) {
+        throw new Error("Failed to load wallet agent decisions");
+      }
+      return response.json();
+    },
+  });
   const { toast } = useToast();
   const recentDecisions = Array.isArray(decisions) ? decisions : [];
   const [displayUptime, setDisplayUptime] = useState(0);
   const [selectedTimeframe, setSelectedTimeframe] = useState("1h");
   const [availableTimeframes, setAvailableTimeframes] = useState<Array<{ key: string; label: string }>>([]);
 
-  if (!connectedWallet) {
-    return (
-      <WalletGate
-        title="Agent Control Locked"
-        description="Connect a wallet first to access autonomous trading controls. Agent execution and settlements should be tied to an active wallet session."
-      />
-    );
-  }
-
   const { mutate: changeState, isPending } = useMutation({
-    mutationFn: patchAgentStatus,
+    mutationFn: ({ status, walletAddress }: { status: "running" | "paused" | "stopped"; walletAddress: string }) =>
+      patchAgentStatus(status, walletAddress),
     onSuccess: (_, newStatus) => {
       queryClient.invalidateQueries({ queryKey: getGetAgentStatusQueryKey() });
       toast({
-        title: `AGENT ${newStatus.toUpperCase()}`,
+        title: `AGENT ${newStatus.status.toUpperCase()}`,
         description: `Signal sent to core engine.`,
       });
     },
@@ -120,7 +134,7 @@ export default function Agent() {
     setSelectedTimeframe(timeframe);
     window.localStorage.setItem("agent-timeframe", timeframe);
 
-    void patchAgentTimeframe(timeframe, currentState)
+    void patchAgentTimeframe(timeframe, currentState, connectedWallet)
       .then(() => {
         toast({
           title: `TIMEFRAME ${timeframe.toUpperCase()}`,
@@ -135,6 +149,15 @@ export default function Agent() {
         });
       });
   };
+
+  if (!connectedWallet) {
+    return (
+      <WalletGate
+        title="Agent Control Locked"
+        description="Connect a wallet first to access autonomous trading controls. Agent execution and settlements should be tied to an active wallet session."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -154,7 +177,7 @@ export default function Agent() {
                 ? "bg-[hsl(152,100%,50%,0.2)] text-[hsl(152,100%,50%)] border-[hsl(152,100%,50%,0.5)]"
                 : "border-border hover:text-primary"
             )}
-            onClick={() => changeState("running")}
+            onClick={() => connectedWallet && changeState({ status: "running", walletAddress: connectedWallet })}
             disabled={currentState === "running" || isPending}
           >
             <Play className="h-3 w-3 mr-2" />
@@ -169,7 +192,7 @@ export default function Agent() {
                 ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/50"
                 : "border-border hover:text-yellow-500"
             )}
-            onClick={() => changeState("paused")}
+            onClick={() => connectedWallet && changeState({ status: "paused", walletAddress: connectedWallet })}
             disabled={currentState === "paused" || isPending}
           >
             <Pause className="h-3 w-3 mr-2" />
@@ -184,7 +207,7 @@ export default function Agent() {
                 ? "bg-destructive/20 text-destructive border-destructive/50"
                 : "border-border hover:text-destructive"
             )}
-            onClick={() => changeState("stopped")}
+            onClick={() => connectedWallet && changeState({ status: "stopped", walletAddress: connectedWallet })}
             disabled={currentState === "stopped" || isPending}
           >
             <Square className="h-3 w-3 mr-2" />
@@ -297,10 +320,14 @@ export default function Agent() {
                   WAITING FOR SIGNALS...
                 </div>
               ) : (
-                recentDecisions.map(dec => (
-                  <div key={dec.id} className="p-4 hover:bg-muted/10 transition-colors">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
+                recentDecisions.map(dec => {
+                  const executionState = getExecutionState(dec.reasoning);
+                  const [logicReasoning, executionReasoning] = splitExecutionReasoning(dec.reasoning);
+
+                  return (
+                    <div key={dec.id} className="p-4 hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3 flex-wrap">
                         <Badge variant="outline" className={cn(
                           "font-mono text-[10px] uppercase rounded-sm border",
                           dec.action === 'buy' ? "bg-[hsl(152,100%,50%,0.1)] text-[hsl(152,100%,50%)] border-[hsl(152,100%,50%,0.3)]" :
@@ -309,28 +336,55 @@ export default function Agent() {
                         )}>
                           {dec.action}
                         </Badge>
-                        <span className="font-mono font-bold text-sm">{dec.symbol}</span>
-                        <span className="font-mono text-xs text-muted-foreground">@ ${dec.price}</span>
+                          {executionState !== "unknown" ? (
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "font-mono text-[10px] uppercase rounded-sm border",
+                                executionState === "executed" && "bg-[hsl(152,100%,50%,0.1)] text-[hsl(152,100%,50%)] border-[hsl(152,100%,50%,0.3)]",
+                                executionState === "skipped" && "bg-yellow-500/10 text-yellow-500 border-yellow-500/30",
+                                executionState === "failed" && "bg-destructive/10 text-destructive border-destructive/30",
+                              )}
+                            >
+                              {executionState}
+                            </Badge>
+                          ) : null}
+                          <span className="font-mono font-bold text-sm">{dec.symbol}</span>
+                          <span className="font-mono text-xs text-muted-foreground">@ ${dec.price}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span className="font-mono text-[10px] text-primary">
+                            CONF: {(dec.confidence * 100).toFixed(1)}%
+                          </span>
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {new Date(dec.createdAt).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <span className="font-mono text-[10px] text-primary">
-                          CONF: {(dec.confidence * 100).toFixed(1)}%
-                        </span>
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          {new Date(dec.createdAt).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </span>
-                      </div>
-                    </div>
 
-                    <p className="font-mono text-xs text-muted-foreground leading-relaxed">
-                      <span className="text-foreground/50 mr-2">{'>'}</span>
-                      {dec.reasoning}
-                    </p>
-                    <div className="mt-2 text-[10px] font-mono text-primary/60 truncate">
-                      [ind: {dec.indicators}]
+                      <p className="font-mono text-xs text-muted-foreground leading-relaxed">
+                        <span className="text-foreground/50 mr-2">{'>'}</span>
+                        {logicReasoning}
+                      </p>
+                      {executionReasoning ? (
+                        <div
+                          className={cn(
+                            "mt-2 font-mono text-[10px] uppercase tracking-wide",
+                            executionState === "executed" && "text-[hsl(152,100%,50%)]",
+                            executionState === "skipped" && "text-yellow-500",
+                            executionState === "failed" && "text-destructive",
+                            executionState === "unknown" && "text-muted-foreground",
+                          )}
+                        >
+                          EXECUTION: {executionReasoning}
+                        </div>
+                      ) : null}
+                      <div className="mt-2 text-[10px] font-mono text-primary/60 truncate">
+                        [ind: {dec.indicators}]
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </CardContent>
@@ -345,4 +399,31 @@ function formatUptime(seconds: number) {
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function getExecutionState(reasoning: string): "executed" | "skipped" | "failed" | "unknown" {
+  if (reasoning.includes("Execution: Execution sent on-chain:")) {
+    return "executed";
+  }
+  if (reasoning.includes("Execution: Execution skipped:")) {
+    return "skipped";
+  }
+  if (reasoning.includes("Execution: Execution failed:")) {
+    return "failed";
+  }
+  return "unknown";
+}
+
+function splitExecutionReasoning(reasoning: string) {
+  const marker = " Execution: ";
+  const markerIndex = reasoning.indexOf(marker);
+
+  if (markerIndex === -1) {
+    return [reasoning, ""] as const;
+  }
+
+  return [
+    reasoning.slice(0, markerIndex).trim(),
+    reasoning.slice(markerIndex + marker.length).trim(),
+  ] as const;
 }

@@ -9,6 +9,7 @@ contract TradingLedgerTest is Test {
     address owner   = address(this);
     address agent   = address(0xBEEF);
     address stranger = address(0xDEAD);
+    address wallet = address(0xCAFE);
 
     function setUp() public {
         ledger = new TradingLedger();
@@ -18,46 +19,50 @@ contract TradingLedgerTest is Test {
         assertTrue(ledger.authorizedAgents(owner));
     }
 
-    function test_recordTradeByOwner() public {
-        uint256 id = ledger.recordTrade("BTC/USD", "buy", 6800000000000, 1000000, 50000000);
+    function test_recordTradeEventByOwner() public {
+        uint256 id = ledger.recordTradeEvent(1, "open", "BTC/USD", "buy", 6800000000000, 1000000, 0, wallet);
         assertEq(id, 1);
-        assertEq(ledger.tradeCount(), 1);
+        assertEq(ledger.eventCount(), 1);
     }
 
-    function test_recordTradeByAgent() public {
+    function test_recordTradeEventByAgent() public {
         ledger.setAgent(agent, true);
         vm.prank(agent);
-        uint256 id = ledger.recordTrade("ETH/USD", "sell", 200000000000, 2000000, -10000000);
+        uint256 id = ledger.recordTradeEvent(2, "close", "ETH/USD", "sell", 200000000000, 2000000, -10000000, wallet);
         assertEq(id, 1);
     }
 
     function test_revertUnauthorizedAgent() public {
         vm.prank(stranger);
         vm.expectRevert("TradingLedger: not authorized agent");
-        ledger.recordTrade("SOL/USD", "buy", 8100000000, 5000000, 0);
+        ledger.recordTradeEvent(1, "open", "SOL/USD", "buy", 8100000000, 5000000, 0, wallet);
     }
 
     function test_totalPnlAccumulates() public {
-        ledger.recordTrade("BTC/USD", "buy",  6800000000000, 1000000,  50000000);
-        ledger.recordTrade("ETH/USD", "sell", 200000000000,  2000000, -20000000);
+        ledger.recordTradeEvent(1, "open", "BTC/USD", "buy",  6800000000000, 1000000, 0, wallet);
+        ledger.recordTradeEvent(1, "close", "BTC/USD", "buy",  6900000000000, 1000000,  50000000, wallet);
+        ledger.recordTradeEvent(2, "settle", "ETH/USD", "sell", 200000000000,  2000000, -20000000, wallet);
         assertEq(ledger.totalPnl(), 30000000);
     }
 
-    function test_getTrade() public {
-        ledger.recordTrade("SOL/USD", "buy", 8100000000, 5000000, 1500000);
-        TradingLedger.Trade memory t = ledger.getTrade(1);
+    function test_getTradeEvent() public {
+        ledger.recordTradeEvent(3, "settle", "SOL/USD", "buy", 8100000000, 5000000, 1500000, wallet);
+        TradingLedger.TradeEvent memory t = ledger.getTradeEvent(1);
+        assertEq(t.localTradeId, 3);
+        assertEq(t.phase,  "settle");
         assertEq(t.symbol, "SOL/USD");
         assertEq(t.side,   "buy");
         assertEq(t.pnl,    1500000);
+        assertEq(t.wallet, wallet);
     }
 
-    function test_getTradesNewestFirst() public {
-        ledger.recordTrade("BTC/USD", "buy",  6800000000000, 1000000, 10000000);
-        ledger.recordTrade("ETH/USD", "sell", 200000000000,  2000000, 20000000);
-        TradingLedger.Trade[] memory trades = ledger.getTrades(0, 10);
-        assertEq(trades.length, 2);
-        assertEq(trades[0].symbol, "ETH/USD"); // newest first
-        assertEq(trades[1].symbol, "BTC/USD");
+    function test_getTradeEventsNewestFirst() public {
+        ledger.recordTradeEvent(1, "open", "BTC/USD", "buy",  6800000000000, 1000000, 0, wallet);
+        ledger.recordTradeEvent(1, "close", "BTC/USD", "buy", 6900000000000, 1000000, 10000000, wallet);
+        TradingLedger.TradeEvent[] memory events = ledger.getTradeEvents(0, 10);
+        assertEq(events.length, 2);
+        assertEq(events[0].phase, "close");
+        assertEq(events[1].phase, "open");
     }
 
     function test_revokeAgent() public {
@@ -65,7 +70,7 @@ contract TradingLedgerTest is Test {
         ledger.setAgent(agent, false);
         vm.prank(agent);
         vm.expectRevert("TradingLedger: not authorized agent");
-        ledger.recordTrade("BTC/USD", "buy", 1, 1, 0);
+        ledger.recordTradeEvent(1, "open", "BTC/USD", "buy", 1, 1, 0, wallet);
     }
 
     function test_transferOwnership() public {
@@ -73,8 +78,8 @@ contract TradingLedgerTest is Test {
         assertEq(ledger.owner(), agent);
     }
 
-    function test_revertGetInvalidTrade() public {
-        vm.expectRevert("TradingLedger: trade not found");
-        ledger.getTrade(99);
+    function test_revertGetInvalidTradeEvent() public {
+        vm.expectRevert("TradingLedger: event not found");
+        ledger.getTradeEvent(99);
     }
 }

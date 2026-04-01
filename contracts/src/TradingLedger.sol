@@ -3,59 +3,46 @@ pragma solidity ^0.8.20;
 
 /**
  * @title TradingLedger
- * @notice On-chain settlement and P&L recording for the AI Trading Bot.
- *         Trades are recorded by the authorized agent wallet. Anyone can
- *         read the ledger.
- *
- * @dev Deployed with Foundry. Owner = deployer.
- *      Agent address must be authorized by owner before calling recordTrade.
+ * @notice On-chain execution ledger for the AI Trading Bot.
+ *         The strategy still runs off-chain, but every execution lifecycle
+ *         event can be appended on-chain by an authorized agent wallet.
  */
 contract TradingLedger {
-    // ─────────────────────────────────────────────────────────
-    // Structs
-    // ─────────────────────────────────────────────────────────
-
-    struct Trade {
+    struct TradeEvent {
         uint256 id;
-        string  symbol;      // e.g. "BTC/USD"
-        string  side;        // "buy" | "sell"
-        int256  price;       // price × 1e8  (to avoid floats)
-        int256  quantity;    // qty  × 1e8
-        int256  pnl;         // P&L  × 1e8 (signed, can be negative)
+        uint256 localTradeId;
+        string phase;       // open | close | settle
+        string symbol;
+        string side;        // buy | sell
+        int256 price;       // price x 1e8
+        int256 quantity;    // qty x 1e8
+        int256 pnl;         // pnl x 1e8
+        address wallet;     // wallet session associated with the trade
         uint256 timestamp;
-        address agent;
+        address agent;      // authorized backend signer
     }
-
-    // ─────────────────────────────────────────────────────────
-    // State
-    // ─────────────────────────────────────────────────────────
 
     address public owner;
     mapping(address => bool) public authorizedAgents;
 
-    Trade[] private _trades;
-    int256  public totalPnl;   // sum of all trade P&L × 1e8
+    TradeEvent[] private _events;
+    int256 public totalPnl;
 
-    // ─────────────────────────────────────────────────────────
-    // Events
-    // ─────────────────────────────────────────────────────────
-
-    event TradeRecorded(
+    event TradeLifecycleRecorded(
         uint256 indexed id,
-        string  symbol,
-        string  side,
-        int256  price,
-        int256  quantity,
-        int256  pnl,
-        address indexed agent
+        uint256 indexed localTradeId,
+        string phase,
+        string symbol,
+        string side,
+        int256 price,
+        int256 quantity,
+        int256 pnl,
+        address indexed wallet,
+        address agent
     );
 
     event AgentAuthorized(address indexed agent, bool authorized);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-
-    // ─────────────────────────────────────────────────────────
-    // Modifiers
-    // ─────────────────────────────────────────────────────────
 
     modifier onlyOwner() {
         require(msg.sender == owner, "TradingLedger: not owner");
@@ -67,120 +54,98 @@ contract TradingLedger {
         _;
     }
 
-    // ─────────────────────────────────────────────────────────
-    // Constructor
-    // ─────────────────────────────────────────────────────────
-
     constructor() {
         owner = msg.sender;
         authorizedAgents[msg.sender] = true;
         emit AgentAuthorized(msg.sender, true);
     }
 
-    // ─────────────────────────────────────────────────────────
-    // Admin
-    // ─────────────────────────────────────────────────────────
-
-    /**
-     * @notice Grant or revoke agent authorization
-     */
     function setAgent(address agent, bool authorized) external onlyOwner {
         authorizedAgents[agent] = authorized;
         emit AgentAuthorized(agent, authorized);
     }
 
-    /**
-     * @notice Transfer contract ownership
-     */
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "TradingLedger: zero address");
         emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
     }
 
-    // ─────────────────────────────────────────────────────────
-    // Write
-    // ─────────────────────────────────────────────────────────
-
-    /**
-     * @notice Record a settled trade on-chain.
-     * @param symbol   Trading pair, e.g. "BTC/USD"
-     * @param side     "buy" or "sell"
-     * @param price    Price multiplied by 1e8 (e.g. $68,000 = 6800000000000)
-     * @param quantity Quantity multiplied by 1e8
-     * @param pnl      Profit/loss multiplied by 1e8 (negative = loss)
-     * @return id      The sequential trade ID (1-indexed)
-     */
-    function recordTrade(
+    function recordTradeEvent(
+        uint256 localTradeId,
+        string calldata phase,
         string calldata symbol,
         string calldata side,
         int256 price,
         int256 quantity,
-        int256 pnl
+        int256 pnl,
+        address wallet
     ) external onlyAuthorizedAgent returns (uint256 id) {
-        id = _trades.length + 1;
+        require(localTradeId > 0, "TradingLedger: local trade id required");
+        require(bytes(symbol).length > 0, "TradingLedger: symbol required");
+        require(bytes(side).length > 0, "TradingLedger: side required");
+        require(bytes(phase).length > 0, "TradingLedger: phase required");
 
-        _trades.push(Trade({
-            id:        id,
-            symbol:    symbol,
-            side:      side,
-            price:     price,
-            quantity:  quantity,
-            pnl:       pnl,
-            timestamp: block.timestamp,
-            agent:     msg.sender
-        }));
+        id = _events.length + 1;
+
+        _events.push(
+            TradeEvent({
+                id: id,
+                localTradeId: localTradeId,
+                phase: phase,
+                symbol: symbol,
+                side: side,
+                price: price,
+                quantity: quantity,
+                pnl: pnl,
+                wallet: wallet,
+                timestamp: block.timestamp,
+                agent: msg.sender
+            })
+        );
 
         totalPnl += pnl;
 
-        emit TradeRecorded(id, symbol, side, price, quantity, pnl, msg.sender);
+        emit TradeLifecycleRecorded(
+            id,
+            localTradeId,
+            phase,
+            symbol,
+            side,
+            price,
+            quantity,
+            pnl,
+            wallet,
+            msg.sender
+        );
     }
 
-    // ─────────────────────────────────────────────────────────
-    // Read
-    // ─────────────────────────────────────────────────────────
-
-    /**
-     * @notice Total number of settled trades
-     */
-    function tradeCount() external view returns (uint256) {
-        return _trades.length;
+    function eventCount() external view returns (uint256) {
+        return _events.length;
     }
 
-    /**
-     * @notice Get a single trade by its sequential ID (1-indexed)
-     */
-    function getTrade(uint256 id) external view returns (Trade memory) {
-        require(id > 0 && id <= _trades.length, "TradingLedger: trade not found");
-        return _trades[id - 1];
+    function getTradeEvent(uint256 id) external view returns (TradeEvent memory) {
+        require(id > 0 && id <= _events.length, "TradingLedger: event not found");
+        return _events[id - 1];
     }
 
-    /**
-     * @notice Get a paginated slice of trades (newest first)
-     * @param offset  0-indexed starting offset (from newest)
-     * @param limit   Max number of trades to return
-     */
-    function getTrades(uint256 offset, uint256 limit)
+    function getTradeEvents(uint256 offset, uint256 limit)
         external
         view
-        returns (Trade[] memory result)
+        returns (TradeEvent[] memory result)
     {
-        uint256 total = _trades.length;
-        if (offset >= total || limit == 0) return new Trade[](0);
+        uint256 total = _events.length;
+        if (offset >= total || limit == 0) return new TradeEvent[](0);
 
         uint256 count = limit;
         if (offset + count > total) count = total - offset;
 
-        result = new Trade[](count);
+        result = new TradeEvent[](count);
         for (uint256 i = 0; i < count; i++) {
-            // Return in reverse (newest first)
-            result[i] = _trades[total - 1 - offset - i];
+            result[i] = _events[total - 1 - offset - i];
         }
     }
 
-    /**
-     * @notice Returns cumulative P&L (× 1e8) — convenience getter
-     */
     function getCumulativePnl() external view returns (int256) {
         return totalPnl;
     }

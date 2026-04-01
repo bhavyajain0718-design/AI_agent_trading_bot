@@ -1,15 +1,16 @@
 import { useState } from "react";
-import { useListTrades, useSettleTrade } from "@workspace/api-client-react";
+import { useSettleTrade } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Link as LinkIcon, Loader2, ArrowUpRight, ArrowDownRight, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { getListTradesQueryKey } from "@workspace/api-client-react";
 import { WalletMenu } from "@/components/wallet-menu";
@@ -24,12 +25,33 @@ function isExplorerHash(txHash: string) {
 
 export default function Trades() {
   const [symbolFilter, setSymbolFilter] = useState("");
-  const { data: trades, isLoading } = useListTrades(
-    { symbol: symbolFilter || undefined },
-    { query: { refetchInterval: 1000 } },
-  );
+  const [statusFilter, setStatusFilter] = useState("all");
   const [settleTradeId, setSettleTradeId] = useState<number | null>(null);
   const { connectedWallet } = useWallet();
+
+  const { data: trades, isLoading } = useQuery({
+    queryKey: ["/api/trades", connectedWallet, symbolFilter, statusFilter],
+    enabled: Boolean(connectedWallet),
+    refetchInterval: 1000,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (connectedWallet) {
+        params.set("walletAddress", connectedWallet);
+      }
+      if (symbolFilter) {
+        params.set("symbol", symbolFilter);
+      }
+      if (statusFilter !== "all") {
+        params.set("status", statusFilter);
+      }
+
+      const response = await fetch(`/api/trades?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error("Failed to load wallet trades");
+      }
+      return response.json();
+    },
+  });
 
   const filteredTrades = Array.isArray(trades) ? trades : [];
 
@@ -48,6 +70,17 @@ export default function Trades() {
         <h2 className="text-2xl font-mono font-bold tracking-tight text-primary uppercase">Trade Ledger</h2>
         <div className="flex items-center gap-3">
           <WalletMenu />
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[170px] font-mono text-sm bg-card/50">
+              <SelectValue placeholder="Trade status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Trades</SelectItem>
+              <SelectItem value="open">Open Only</SelectItem>
+              <SelectItem value="closed">Closed Only</SelectItem>
+              <SelectItem value="settled">On-Chain Only</SelectItem>
+            </SelectContent>
+          </Select>
           <div className="flex items-center gap-2 max-w-xs w-full relative">
             <Search className="h-4 w-4 text-muted-foreground absolute ml-3" />
             <Input 
@@ -134,15 +167,33 @@ export default function Trades() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {(trade.status === "closed" || trade.status === "open") && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            className="h-7 text-[10px] font-mono border-[hsl(270,100%,65%,0.3)] text-[hsl(270,100%,65%)] hover:bg-[hsl(270,100%,65%,0.1)] hover:text-[hsl(270,100%,65%)]"
-                            onClick={() => setSettleTradeId(trade.id)}
-                          >
-                            SETTLE
-                          </Button>
+                        {trade.status === "open" && (
+                          <div className="flex flex-col items-end gap-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              className="h-7 text-[10px] font-mono border-[hsl(270,100%,65%,0.3)] text-[hsl(270,100%,65%)] hover:bg-[hsl(270,100%,65%,0.1)] hover:text-[hsl(270,100%,65%)]"
+                              onClick={() => setSettleTradeId(trade.id)}
+                            >
+                              SETTLE
+                            </Button>
+                            {trade.chainTxHash ? (
+                              isExplorerHash(trade.chainTxHash) ? (
+                                <a
+                                  href={`${SEPOLIA_ETHERSCAN_BASE}/tx/${trade.chainTxHash}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[10px] text-muted-foreground hover:text-primary transition-colors underline decoration-border underline-offset-4"
+                                >
+                                  {trade.chainTxHash.substring(0,6)}...{trade.chainTxHash.substring(trade.chainTxHash.length-4)}
+                                </a>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground">
+                                  {trade.chainTxHash}
+                                </span>
+                              )
+                            ) : null}
+                          </div>
                         )}
                         {trade.status === "settled" && trade.chainTxHash && (
                           isExplorerHash(trade.chainTxHash) ? (
@@ -225,6 +276,7 @@ function SettleTradeDialog({
           description: `Trade #${tradeId} successfully recorded to ledger.`,
         });
         queryClient.invalidateQueries({ queryKey: getListTradesQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["/api/trades", connectedWallet] });
         onOpenChange(false);
       },
       onError: (err) => {

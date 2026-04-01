@@ -22,7 +22,7 @@ export function getTradeWalletAddress(notes: string | null | undefined) {
   return normalizeWalletAddress(match?.[1]);
 }
 
-export function appendWalletToNotes(notes: string | null | undefined, walletAddress: string) {
+export function appendWalletToNotes(notes: string | null | undefined, walletAddress: string | null | undefined) {
   const normalized = normalizeWalletAddress(walletAddress);
   if (!normalized) {
     return notes ?? null;

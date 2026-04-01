@@ -1,8 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
-import { db, tradesTable } from "@workspace/db";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { and, eq, desc } from "drizzle-orm";
+import { db, onChainTradeEventsTable, tradesTable } from "@workspace/db";
 import {
   ListTradesResponse,
   GetTradeResponse,
@@ -12,66 +10,10 @@ import {
   SettleTradeParams,
 } from "@workspace/api-zod";
 import { attachLivePnl } from "../lib/open-trade-pnl";
-import { appendWalletToNotes } from "../lib/trade-wallet";
+import { appendWalletToNotes, normalizeWalletAddress } from "../lib/trade-wallet";
+import { recordTradeLifecycleOnChain } from "../lib/on-chain-ledger";
 
 const router: IRouter = Router();
-const execFileAsync = promisify(execFile);
-
-function toScaledInt(value: string | number) {
-  const numeric = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(numeric)) {
-    throw new Error(`Invalid numeric value: ${value}`);
-  }
-
-  return Math.round(numeric * 1e8).toString();
-}
-
-function normalizePrivateKey(privateKey: string) {
-  return privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
-}
-
-async function submitSettlementToChain(trade: {
-  symbol: string;
-  side: string;
-  price: string;
-  quantity: string;
-}, pnl: string) {
-  const rpcUrl = process.env["RPC_URL"];
-  const contractAddress = process.env["CONTRACT_ADDRESS"];
-  const privateKey = process.env["DEPLOYER_PRIVATE_KEY"];
-
-  if (!rpcUrl || !contractAddress || !privateKey) {
-    throw new Error("RPC_URL, CONTRACT_ADDRESS, and DEPLOYER_PRIVATE_KEY are required for on-chain settlement.");
-  }
-
-  const args = [
-    "send",
-    "--async",
-    "--rpc-url",
-    rpcUrl,
-    "--private-key",
-    normalizePrivateKey(privateKey),
-    contractAddress,
-    "recordTrade(string,string,int256,int256,int256)",
-    trade.symbol,
-    trade.side,
-    toScaledInt(trade.price),
-    toScaledInt(trade.quantity),
-    toScaledInt(pnl),
-  ];
-
-  const { stdout } = await execFileAsync("cast", args, {
-    cwd: process.cwd(),
-    env: process.env,
-  });
-
-  const txHash = stdout.trim().split(/\s+/).find((part) => /^0x[a-fA-F0-9]{64}$/.test(part));
-  if (!txHash) {
-    throw new Error(`Unable to parse transaction hash from cast send output: ${stdout}`);
-  }
-
-  return txHash;
-}
 
 async function resolveSettlementPnl(trade: typeof tradesTable.$inferSelect) {
   if (trade.status === "open") {
@@ -91,20 +33,56 @@ async function resolveSettlementPnl(trade: typeof tradesTable.$inferSelect) {
 router.get("/trades", async (req, res): Promise<void> => {
   const limit = Number(req.query["limit"] ?? 50);
   const symbol = req.query["symbol"] as string | undefined;
+  const statusFilter = req.query["status"] as string | undefined;
+  const requestedWallet = req.query["walletAddress"] as string | undefined;
+  const walletAddress = normalizeWalletAddress(requestedWallet);
+  const normalizedStatus = statusFilter?.toLowerCase();
+  const validStatuses = new Set(["open", "closed", "settled"]);
 
-  let query = db.select().from(tradesTable).orderBy(desc(tradesTable.createdAt));
-  if (symbol) {
-    query = db
-      .select()
-      .from(tradesTable)
-      .where(eq(tradesTable.symbol, symbol))
-      .orderBy(desc(tradesTable.createdAt)) as typeof query;
+  if (requestedWallet && !walletAddress) {
+    res.status(400).json({ error: "Invalid walletAddress query parameter" });
+    return;
   }
 
-  const trades = await query.limit(limit);
+  if (normalizedStatus && normalizedStatus !== "all" && !validStatuses.has(normalizedStatus)) {
+    res.status(400).json({ error: "Invalid status query parameter" });
+    return;
+  }
+
+  const filters = [];
+  if (symbol) {
+    filters.push(eq(tradesTable.symbol, symbol));
+  }
+  if (walletAddress) {
+    filters.push(eq(tradesTable.walletAddress, walletAddress));
+  }
+  if (normalizedStatus && normalizedStatus !== "all") {
+    filters.push(eq(tradesTable.status, normalizedStatus));
+  }
+
+  const trades = await db
+    .select()
+    .from(tradesTable)
+    .where(filters.length > 0 ? and(...filters) : undefined)
+    .orderBy(desc(tradesTable.createdAt))
+    .limit(limit);
+  const tradeIds = trades.map((trade) => trade.id);
+  const latestEvents = tradeIds.length > 0
+    ? await db.select().from(onChainTradeEventsTable).orderBy(desc(onChainTradeEventsTable.createdAt))
+    : [];
+  const latestEventByTradeId = new Map<number, (typeof latestEvents)[number]>();
+
+  for (const event of latestEvents) {
+    if (!tradeIds.includes(event.tradeId) || latestEventByTradeId.has(event.tradeId)) {
+      continue;
+    }
+    latestEventByTradeId.set(event.tradeId, event);
+  }
+
   const enrichedTrades = await attachLivePnl(trades);
   const serialized = enrichedTrades.map((t) => ({
     ...t,
+    chainTxHash: latestEventByTradeId.get(t.id)?.txHash ?? t.chainTxHash,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
     chainSettledAt: t.chainSettledAt?.toISOString() ?? null,
@@ -153,8 +131,15 @@ router.get("/trades/:id", async (req, res): Promise<void> => {
   }
 
   const [enrichedTrade] = await attachLivePnl([trade]);
+  const [latestEvent] = await db
+    .select()
+    .from(onChainTradeEventsTable)
+    .where(eq(onChainTradeEventsTable.tradeId, trade.id))
+    .orderBy(desc(onChainTradeEventsTable.createdAt))
+    .limit(1);
   res.json(GetTradeResponse.parse({
     ...enrichedTrade,
+    chainTxHash: latestEvent?.txHash ?? enrichedTrade.chainTxHash,
     createdAt: enrichedTrade.createdAt.toISOString(),
     updatedAt: enrichedTrade.updatedAt.toISOString(),
     chainSettledAt: enrichedTrade.chainSettledAt?.toISOString() ?? null,
@@ -193,15 +178,27 @@ router.post("/trades/:id/settle", async (req, res): Promise<void> => {
 
   let chainTxHash: string;
   try {
-    chainTxHash = await submitSettlementToChain(
-      {
+    const [latestLifecycleEvent] = await db
+      .select()
+      .from(onChainTradeEventsTable)
+      .where(eq(onChainTradeEventsTable.tradeId, existing.id))
+      .orderBy(desc(onChainTradeEventsTable.createdAt))
+      .limit(1);
+
+    if (existing.status === "closed" && latestLifecycleEvent && (latestLifecycleEvent.phase === "close" || latestLifecycleEvent.phase === "settle")) {
+      chainTxHash = latestLifecycleEvent.txHash;
+    } else {
+      chainTxHash = await recordTradeLifecycleOnChain({
+        tradeId: existing.id,
+        phase: "settle",
         symbol: existing.symbol,
         side: existing.side,
         price: String(existing.price),
         quantity: String(existing.quantity),
-      },
-      settlementPnl,
-    );
+        pnl: settlementPnl,
+        walletAddress: body.data.walletAddress,
+      });
+    }
   } catch (error) {
     res.status(502).json({
       error: error instanceof Error ? error.message : "Failed to record trade on-chain",
@@ -212,6 +209,7 @@ router.post("/trades/:id/settle", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(tradesTable)
     .set({
+      walletAddress: body.data.walletAddress.toLowerCase(),
       pnl: settlementPnl,
       chainTxHash,
       chainSettledAt: new Date(),

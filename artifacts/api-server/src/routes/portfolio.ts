@@ -6,7 +6,7 @@ import {
   GetPnlHistoryResponse,
 } from "@workspace/api-zod";
 import { calculateOpenPositionsPnl } from "../lib/open-trade-pnl";
-import { getTradeWalletAddress, normalizeWalletAddress } from "../lib/trade-wallet";
+import { normalizeWalletAddress } from "../lib/trade-wallet";
 
 const router: IRouter = Router();
 
@@ -20,9 +20,11 @@ router.get("/portfolio/summary", async (req, res): Promise<void> => {
   }
 
   if (walletAddress) {
-    const trades = await db.select().from(tradesTable);
-    const walletTrades = trades.filter((trade) => getTradeWalletAddress(trade.notes) === walletAddress);
-    const realizedPnl = walletTrades.reduce((sum, trade) => sum + Number(trade.pnl ?? "0"), 0);
+    const walletTrades = await db.select().from(tradesTable).where(eq(tradesTable.walletAddress, walletAddress));
+    const openTradePnl = await calculateOpenPositionsPnl(walletTrades.filter((trade) => trade.status === "open"));
+    const realizedPnl = walletTrades
+      .filter((trade) => trade.status !== "open")
+      .reduce((sum, trade) => sum + Number(trade.pnl ?? "0"), 0);
     const pnlTrades = walletTrades.filter((trade) => trade.pnl !== null);
     const profitableTrades = pnlTrades.filter((trade) => Number(trade.pnl ?? "0") > 0);
     const topSymbolCounts = new Map<string, number>();
@@ -35,8 +37,8 @@ router.get("/portfolio/summary", async (req, res): Promise<void> => {
       [...topSymbolCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
 
     const summary = {
-      totalValue: (10000 + realizedPnl).toFixed(2),
-      totalPnl: realizedPnl.toFixed(2),
+      totalValue: (10000 + realizedPnl + openTradePnl.totalUnrealizedPnl).toFixed(2),
+      totalPnl: (realizedPnl + openTradePnl.totalUnrealizedPnl).toFixed(2),
       winRate: pnlTrades.length === 0 ? 0 : Number(((profitableTrades.length / pnlTrades.length) * 100).toFixed(1)),
       totalTrades: walletTrades.length,
       openTrades: walletTrades.filter((trade) => trade.status === "open").length,
@@ -120,17 +122,21 @@ router.get("/portfolio/pnl", async (req, res): Promise<void> => {
   }
 
   if (walletAddress) {
-    const trades = await db.select().from(tradesTable);
-    const walletTrades = trades.filter((trade) => getTradeWalletAddress(trade.notes) === walletAddress);
+    const walletTrades = await db.select().from(tradesTable).where(eq(tradesTable.walletAddress, walletAddress));
     const dailyPnl = new Map<string, number>();
+    const openTradePnl = await calculateOpenPositionsPnl(walletTrades.filter((trade) => trade.status === "open"));
 
     for (const trade of walletTrades) {
-      if (trade.pnl === null) {
+      if (trade.pnl === null || trade.status === "open") {
         continue;
       }
 
       const date = trade.createdAt.toISOString().slice(0, 10);
       dailyPnl.set(date, (dailyPnl.get(date) ?? 0) + Number(trade.pnl));
+    }
+
+    for (const position of openTradePnl.positionHistory) {
+      dailyPnl.set(position.date, (dailyPnl.get(position.date) ?? 0) + position.pnl);
     }
 
     let cumulative = 0;

@@ -1,6 +1,7 @@
 import app from "./app";
 import { agentEngine } from "./lib/agent-engine";
 import { logger } from "./lib/logger";
+import { bootstrapDatabase } from "./lib/db-bootstrap";
 
 const rawPort = process.env["PORT"];
 
@@ -19,11 +20,18 @@ if (Number.isNaN(port) || port <= 0) {
 // Keep the engine initialized in-process; it will only begin polling when the user starts it.
 void agentEngine;
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
+void bootstrapDatabase()
+  .then(() => {
+    app.listen(port, (err) => {
+      if (err) {
+        logger.error({ err }, "Error listening on port");
+        process.exit(1);
+      }
 
-  logger.info({ port }, "Server listening");
-});
+      logger.info({ port }, "Server listening");
+    });
+  })
+  .catch((err) => {
+    logger.error({ err }, "Database bootstrap failed");
+    process.exit(1);
+  });

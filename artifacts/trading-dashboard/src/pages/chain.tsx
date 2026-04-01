@@ -1,4 +1,4 @@
-import { useGetChainStatus, useListOnChainTrades, useGetOnChainPnl } from "@workspace/api-client-react";
+import { useGetChainStatus } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWallet } from "@/hooks/use-wallet";
 import { WalletGate } from "@/components/wallet-gate";
+import { useQuery } from "@tanstack/react-query";
 
 const SEPOLIA_ETHERSCAN_BASE = "https://sepolia.etherscan.io";
 
@@ -17,8 +18,30 @@ function isExplorerHash(txHash: string) {
 export default function Chain() {
   const { connectedWallet } = useWallet();
   const { data: chainStatus, isLoading: loadingStatus } = useGetChainStatus({ query: { refetchInterval: 15000 } });
-  const { data: pnlStats, isLoading: loadingPnl } = useGetOnChainPnl();
-  const { data: onChainTrades, isLoading: loadingTrades } = useListOnChainTrades({ limit: 10 });
+  const { data: pnlStats, isLoading: loadingPnl } = useQuery({
+    queryKey: ["/api/chain/on-chain-pnl", connectedWallet],
+    enabled: Boolean(connectedWallet),
+    refetchInterval: 5000,
+    queryFn: async () => {
+      const response = await fetch(`/api/chain/on-chain-pnl?walletAddress=${connectedWallet}`);
+      if (!response.ok) {
+        throw new Error("Failed to load wallet on-chain P&L");
+      }
+      return response.json();
+    },
+  });
+  const { data: onChainTrades, isLoading: loadingTrades } = useQuery({
+    queryKey: ["/api/chain/on-chain-trades", connectedWallet],
+    enabled: Boolean(connectedWallet),
+    refetchInterval: 5000,
+    queryFn: async () => {
+      const response = await fetch(`/api/chain/on-chain-trades?limit=10&walletAddress=${connectedWallet}`);
+      if (!response.ok) {
+        throw new Error("Failed to load wallet on-chain trades");
+      }
+      return response.json();
+    },
+  });
   const recentOnChainTrades = Array.isArray(onChainTrades) ? onChainTrades : [];
 
   if (!connectedWallet) {
@@ -86,7 +109,7 @@ export default function Chain() {
               </div>
             )}
             <p className="text-[10px] font-mono text-muted-foreground mt-1 uppercase">
-              Settled across {pnlStats?.totalTrades || 0} blocks
+              Finalized across {pnlStats?.totalTrades || 0} on-chain settlements
             </p>
           </CardContent>
         </Card>
@@ -118,6 +141,9 @@ export default function Chain() {
               <LinkIcon className="h-4 w-4 text-[hsl(270,100%,65%)]" />
               Settlement Ledger (Latest 10)
             </CardTitle>
+            <CardDescription className="font-mono text-[10px] uppercase text-muted-foreground">
+              Shows finalized on-chain close and settlement transactions for this wallet.
+            </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
@@ -138,7 +164,7 @@ export default function Chain() {
                   </TableRow>
                 ) : recentOnChainTrades.length > 0 ? (
                   recentOnChainTrades.map((tx) => (
-                    <TableRow key={tx.txHash} className="border-border/20 group">
+                    <TableRow key={`${tx.txHash}-${tx.tradeId}-${tx.timestamp}`} className="border-border/20 group">
                       <TableCell className="font-mono text-[10px]">
                         {isExplorerHash(tx.txHash) ? (
                           <a href={`${SEPOLIA_ETHERSCAN_BASE}/tx/${tx.txHash}`} target="_blank" rel="noreferrer" className="text-[hsl(270,100%,65%)] hover:underline decoration-[hsl(270,100%,65%,0.5)] underline-offset-4">
@@ -151,7 +177,10 @@ export default function Chain() {
                         )}
                       </TableCell>
                       <TableCell className="font-mono text-xs font-bold text-foreground">
-                        {tx.symbol} <span className={cn("text-[10px]", tx.side === 'buy' ? "text-[hsl(152,100%,50%)]" : "text-destructive")}>{tx.side.toUpperCase()}</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span>{tx.symbol}</span>
+                          <span className={cn("text-[10px]", tx.side === 'buy' ? "text-[hsl(152,100%,50%)]" : "text-destructive")}>{tx.side.toUpperCase()}</span>
+                        </div>
                       </TableCell>
                       <TableCell className={cn(
                         "font-mono text-xs text-right",

@@ -1,14 +1,16 @@
 import { Router, type IRouter } from "express";
-import { db, tradesTable } from "@workspace/db";
-import { eq, count, sum, desc } from "drizzle-orm";
+import { db, onChainTradeEventsTable } from "@workspace/db";
+import { eq, count, sum, desc, inArray, and } from "drizzle-orm";
 import {
   GetChainStatusResponse,
   GetOnChainPnlResponse,
   ListOnChainTradesResponse,
 } from "@workspace/api-zod";
 import { checkRpcConnectivity } from "../lib/connectivity";
+import { normalizeWalletAddress } from "../lib/trade-wallet";
 
 const router: IRouter = Router();
+const FINALIZED_PHASES = ["close", "settle"] as const;
 
 router.get("/chain/status", async (_req, res): Promise<void> => {
   const contractAddress = process.env["CONTRACT_ADDRESS"] ?? null;
@@ -19,10 +21,10 @@ router.get("/chain/status", async (_req, res): Promise<void> => {
   const [stats] = await db
     .select({
       total: count(),
-      totalPnl: sum(tradesTable.pnl),
+      totalPnl: sum(onChainTradeEventsTable.pnl),
     })
-    .from(tradesTable)
-    .where(eq(tradesTable.status, "settled"));
+    .from(onChainTradeEventsTable)
+    .where(inArray(onChainTradeEventsTable.phase, [...FINALIZED_PHASES]));
 
   const status = {
     connected: rpcConnected,
@@ -38,25 +40,43 @@ router.get("/chain/status", async (_req, res): Promise<void> => {
 });
 
 router.get("/chain/on-chain-pnl", async (_req, res): Promise<void> => {
-  const [stats] = await db
+  const requestedWallet = _req.query["walletAddress"] as string | undefined;
+  const walletAddress = normalizeWalletAddress(requestedWallet);
+
+  if (requestedWallet && !walletAddress) {
+    res.status(400).json({ error: "Invalid walletAddress query parameter" });
+    return;
+  }
+
+  const statsQuery = db
     .select({
       total: count(),
-      totalPnl: sum(tradesTable.pnl),
+      totalPnl: sum(onChainTradeEventsTable.pnl),
     })
-    .from(tradesTable)
-    .where(eq(tradesTable.status, "settled"));
+    .from(onChainTradeEventsTable);
 
-  const [latest] = await db
-    .select({ chainSettledAt: tradesTable.chainSettledAt })
-    .from(tradesTable)
-    .where(eq(tradesTable.status, "settled"))
-    .orderBy(desc(tradesTable.chainSettledAt))
-    .limit(1);
+  const latestQuery = db
+    .select({ createdAt: onChainTradeEventsTable.createdAt })
+    .from(onChainTradeEventsTable);
+
+  const [stats] = walletAddress
+    ? await statsQuery.where(and(
+        eq(onChainTradeEventsTable.walletAddress, walletAddress),
+        inArray(onChainTradeEventsTable.phase, [...FINALIZED_PHASES]),
+      ))
+    : await statsQuery.where(inArray(onChainTradeEventsTable.phase, [...FINALIZED_PHASES]));
+
+  const [latest] = walletAddress
+    ? await latestQuery.where(and(
+        eq(onChainTradeEventsTable.walletAddress, walletAddress),
+        inArray(onChainTradeEventsTable.phase, [...FINALIZED_PHASES]),
+      )).orderBy(desc(onChainTradeEventsTable.createdAt)).limit(1)
+    : await latestQuery.where(inArray(onChainTradeEventsTable.phase, [...FINALIZED_PHASES])).orderBy(desc(onChainTradeEventsTable.createdAt)).limit(1);
 
   const pnl = {
     totalPnl: stats?.totalPnl ?? "0",
     totalTrades: Number(stats?.total ?? 0),
-    lastUpdated: latest?.chainSettledAt?.toISOString() ?? null,
+    lastUpdated: latest?.createdAt?.toISOString() ?? null,
   };
 
   res.json(GetOnChainPnlResponse.parse(pnl));
@@ -64,22 +84,33 @@ router.get("/chain/on-chain-pnl", async (_req, res): Promise<void> => {
 
 router.get("/chain/on-chain-trades", async (req, res): Promise<void> => {
   const limit = Number(req.query["limit"] ?? 20);
+  const requestedWallet = req.query["walletAddress"] as string | undefined;
+  const walletAddress = normalizeWalletAddress(requestedWallet);
 
-  const trades = await db
+  if (requestedWallet && !walletAddress) {
+    res.status(400).json({ error: "Invalid walletAddress query parameter" });
+    return;
+  }
+
+  const eventsQuery = db
     .select()
-    .from(tradesTable)
-    .where(eq(tradesTable.status, "settled"))
-    .orderBy(desc(tradesTable.chainSettledAt))
-    .limit(limit);
+    .from(onChainTradeEventsTable);
 
-  const mapped = trades.map((t) => ({
-    tradeId: t.id,
-    symbol: t.symbol,
-    side: t.side,
-    price: t.price ?? "0",
-    pnl: t.pnl ?? "0",
-    txHash: t.chainTxHash ?? `local-settlement-${t.id}`,
-    timestamp: t.chainSettledAt?.toISOString() ?? t.createdAt.toISOString(),
+  const events = walletAddress
+    ? await eventsQuery.where(and(
+        eq(onChainTradeEventsTable.walletAddress, walletAddress),
+        inArray(onChainTradeEventsTable.phase, [...FINALIZED_PHASES]),
+      )).orderBy(desc(onChainTradeEventsTable.createdAt)).limit(limit)
+    : await eventsQuery.where(inArray(onChainTradeEventsTable.phase, [...FINALIZED_PHASES])).orderBy(desc(onChainTradeEventsTable.createdAt)).limit(limit);
+
+  const mapped = events.map((event) => ({
+    tradeId: event.tradeId,
+    symbol: `${event.symbol} [${event.phase.toUpperCase()}]`,
+    side: event.side,
+    price: event.price ?? "0",
+    pnl: event.pnl ?? "0",
+    txHash: event.txHash,
+    timestamp: event.createdAt.toISOString(),
   }));
 
   res.json(ListOnChainTradesResponse.parse(mapped));
