@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, sql } from "drizzle-orm";
-import { db, tradesTable } from "@workspace/db";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { db, onChainTradeEventsTable, tradesTable } from "@workspace/db";
 import {
   GetPortfolioSummaryResponse,
   GetPnlHistoryResponse,
@@ -9,6 +9,12 @@ import { calculateOpenPositionsPnl } from "../lib/open-trade-pnl";
 import { normalizeWalletAddress } from "../lib/trade-wallet";
 
 const router: IRouter = Router();
+const FINALIZED_PHASES = ["close", "settle"] as const;
+
+function getHourBucket(value: Date | string) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  return `${date.toISOString().slice(0, 13)}:00:00.000Z`;
+}
 
 router.get("/portfolio/summary", async (req, res): Promise<void> => {
   const requestedWallet = req.query["walletAddress"] as string | undefined;
@@ -21,6 +27,16 @@ router.get("/portfolio/summary", async (req, res): Promise<void> => {
 
   if (walletAddress) {
     const walletTrades = await db.select().from(tradesTable).where(eq(tradesTable.walletAddress, walletAddress));
+    const finalizedEvents = await db
+      .select({
+        tradeId: onChainTradeEventsTable.tradeId,
+        pnl: onChainTradeEventsTable.pnl,
+      })
+      .from(onChainTradeEventsTable)
+      .where(and(
+        eq(onChainTradeEventsTable.walletAddress, walletAddress),
+        inArray(onChainTradeEventsTable.phase, [...FINALIZED_PHASES]),
+      ));
     const openTradePnl = await calculateOpenPositionsPnl(walletTrades.filter((trade) => trade.status === "open"));
     const realizedPnl = walletTrades
       .filter((trade) => trade.status !== "open")
@@ -35,6 +51,7 @@ router.get("/portfolio/summary", async (req, res): Promise<void> => {
 
     const topSymbol =
       [...topSymbolCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
+    const finalizedTradeIds = new Set(finalizedEvents.map((event) => event.tradeId));
 
     const summary = {
       totalValue: (10000 + realizedPnl + openTradePnl.totalUnrealizedPnl).toFixed(2),
@@ -42,8 +59,8 @@ router.get("/portfolio/summary", async (req, res): Promise<void> => {
       winRate: pnlTrades.length === 0 ? 0 : Number(((profitableTrades.length / pnlTrades.length) * 100).toFixed(1)),
       totalTrades: walletTrades.length,
       openTrades: walletTrades.filter((trade) => trade.status === "open").length,
-      settledTrades: walletTrades.filter((trade) => trade.status === "settled").length,
-      onChainSettled: walletTrades.filter((trade) => trade.chainTxHash !== null).length,
+      settledTrades: finalizedTradeIds.size,
+      onChainSettled: finalizedTradeIds.size,
       topSymbol,
     };
 
@@ -123,7 +140,7 @@ router.get("/portfolio/pnl", async (req, res): Promise<void> => {
 
   if (walletAddress) {
     const walletTrades = await db.select().from(tradesTable).where(eq(tradesTable.walletAddress, walletAddress));
-    const dailyPnl = new Map<string, number>();
+    const hourlyPnl = new Map<string, number>();
     const openTradePnl = await calculateOpenPositionsPnl(walletTrades.filter((trade) => trade.status === "open"));
 
     for (const trade of walletTrades) {
@@ -131,18 +148,19 @@ router.get("/portfolio/pnl", async (req, res): Promise<void> => {
         continue;
       }
 
-      const date = trade.createdAt.toISOString().slice(0, 10);
-      dailyPnl.set(date, (dailyPnl.get(date) ?? 0) + Number(trade.pnl));
+      const bucket = getHourBucket(trade.createdAt);
+      hourlyPnl.set(bucket, (hourlyPnl.get(bucket) ?? 0) + Number(trade.pnl));
     }
 
     for (const position of openTradePnl.positionHistory) {
-      dailyPnl.set(position.date, (dailyPnl.get(position.date) ?? 0) + position.pnl);
+      const bucket = getHourBucket(position.date);
+      hourlyPnl.set(bucket, (hourlyPnl.get(bucket) ?? 0) + position.pnl);
     }
 
     let cumulative = 0;
-    const history = [...dailyPnl.entries()]
+    const history = [...hourlyPnl.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .slice(-60)
+      .slice(-72)
       .map(([date, pnl]) => {
         cumulative += pnl;
         return { date, pnl, cumulative };
@@ -155,13 +173,13 @@ router.get("/portfolio/pnl", async (req, res): Promise<void> => {
   const [rows, openTrades] = await Promise.all([
     db.execute(sql`
       SELECT
-        DATE(created_at AT TIME ZONE 'UTC')::text AS date,
+        TO_CHAR(DATE_TRUNC('hour', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:00:00.000"Z"') AS date,
         COALESCE(SUM(pnl::numeric), 0)::float     AS pnl
       FROM trades
       WHERE pnl IS NOT NULL
-      GROUP BY DATE(created_at AT TIME ZONE 'UTC')
+      GROUP BY DATE_TRUNC('hour', created_at AT TIME ZONE 'UTC')
       ORDER BY date ASC
-      LIMIT 60
+      LIMIT 72
     `),
     db.select({
       symbol: tradesTable.symbol,
@@ -176,20 +194,21 @@ router.get("/portfolio/pnl", async (req, res): Promise<void> => {
   ]);
 
   const openPnl = await calculateOpenPositionsPnl(openTrades);
-  const dailyPnl = new Map<string, number>();
+  const hourlyPnl = new Map<string, number>();
 
   for (const row of (rows as { rows: unknown[] }).rows as { date: string; pnl: number }[]) {
-    dailyPnl.set(row.date, Number(row.pnl));
+    hourlyPnl.set(row.date, Number(row.pnl));
   }
 
   for (const position of openPnl.positionHistory) {
-    dailyPnl.set(position.date, (dailyPnl.get(position.date) ?? 0) + position.pnl);
+    const bucket = getHourBucket(position.date);
+    hourlyPnl.set(bucket, (hourlyPnl.get(bucket) ?? 0) + position.pnl);
   }
 
   let cumulative = 0;
-  const history = [...dailyPnl.entries()]
+  const history = [...hourlyPnl.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .slice(-60)
+    .slice(-72)
     .map(([date, pnl]) => {
       cumulative += pnl;
       return { date, pnl, cumulative };

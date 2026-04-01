@@ -1,7 +1,7 @@
 import { useGetAgentStatus, useGetChainStatus, useListAgentDecisions } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { Activity, DollarSign, Target, Briefcase, Link as LinkIcon, AlertTriangle, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { Activity, DollarSign, Target, Briefcase, Link as LinkIcon, AlertTriangle, ArrowUpRight, ArrowDownRight, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WalletMenu } from "@/components/wallet-menu";
@@ -10,6 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 
 const PAPER_TRADING_START_BALANCE = 10000;
+const SEPOLIA_ETHERSCAN_BASE = "https://sepolia.etherscan.io";
 
 function safeNumber(value: unknown, fallback = 0) {
   const parsed =
@@ -18,6 +19,29 @@ function safeNumber(value: unknown, fallback = 0) {
         Number.NaN;
 
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function formatHourlyTick(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatHourlyTooltipLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function Dashboard() {
@@ -92,7 +116,8 @@ export default function Dashboard() {
           title="On-Chain Settled"
           value={!connectedWallet ? "Connect Wallet" : loadingSummary ? null : `${summary?.onChainSettled || 0} Trades`}
           icon={<LinkIcon className="h-4 w-4 text-[hsl(270,100%,65%)]" />}
-          subtitle={!connectedWallet ? "Connect to view settlements" : "Settled by connected wallet"}
+          subtitle={!connectedWallet ? "Connect to view settlements" : "Open on Sepolia Etherscan"}
+          href={connectedWallet ? `${SEPOLIA_ETHERSCAN_BASE}/address/${connectedWallet}` : undefined}
         />
       </div>
 
@@ -123,9 +148,22 @@ export default function Dashboard() {
                       <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                  <XAxis
+                    dataKey="date"
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={formatHourlyTick}
+                    minTickGap={24}
+                  />
                   <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
                   <Tooltip
+                    labelFormatter={formatHourlyTooltipLabel}
+                    formatter={(value: number | string, name: string) => [
+                      `$${safeNumber(value).toFixed(2)}`,
+                      name === "cumulative" ? "Cumulative P&L" : name,
+                    ]}
                     contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '4px', fontFamily: 'monospace' }}
                     itemStyle={{ color: 'hsl(var(--foreground))' }}
                   />
@@ -182,15 +220,30 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ title, value, icon, subtitle, valueClassName }: { title: string, value: string | null, icon: React.ReactNode, subtitle?: string, valueClassName?: string }) {
-  return (
-    <Card className="border-border/50 bg-card/50 backdrop-blur">
+function StatCard({
+  title,
+  value,
+  icon,
+  subtitle,
+  valueClassName,
+  href,
+}: {
+  title: string,
+  value: string | null,
+  icon: React.ReactNode,
+  subtitle?: string,
+  valueClassName?: string,
+  href?: string,
+}) {
+  const content = (
+    <>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-xs font-mono uppercase text-muted-foreground font-medium">
           {title}
         </CardTitle>
-        <div className="text-muted-foreground">
+        <div className="text-muted-foreground flex items-center gap-2">
           {icon}
+          {href ? <ExternalLink className="h-3.5 w-3.5 text-[hsl(270,100%,65%)]" /> : null}
         </div>
       </CardHeader>
       <CardContent>
@@ -203,7 +256,23 @@ function StatCard({ title, value, icon, subtitle, valueClassName }: { title: str
           </p>
         )}
       </CardContent>
-    </Card>
+    </>
+  );
+
+  if (!href) {
+    return (
+      <Card className="border-border/50 bg-card/50 backdrop-blur">
+        {content}
+      </Card>
+    );
+  }
+
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="block">
+      <Card className="border-border/50 bg-card/50 backdrop-blur transition-colors hover:border-[hsl(270,100%,65%,0.35)] hover:bg-[hsl(270,100%,65%,0.04)]">
+        {content}
+      </Card>
+    </a>
   );
 }
 

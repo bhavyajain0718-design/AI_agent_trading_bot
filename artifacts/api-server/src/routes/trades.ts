@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, inArray } from "drizzle-orm";
 import { db, onChainTradeEventsTable, tradesTable } from "@workspace/db";
 import {
   ListTradesResponse,
@@ -14,6 +14,21 @@ import { appendWalletToNotes, normalizeWalletAddress } from "../lib/trade-wallet
 import { recordTradeLifecycleOnChain } from "../lib/on-chain-ledger";
 
 const router: IRouter = Router();
+
+function getDerivedTradeStatus(
+  trade: typeof tradesTable.$inferSelect,
+  latestEvent?: typeof onChainTradeEventsTable.$inferSelect,
+) {
+  if (latestEvent?.phase === "close" || latestEvent?.phase === "settle" || trade.chainSettledAt || trade.status === "settled") {
+    return "settled" as const;
+  }
+
+  if (trade.status === "closed") {
+    return "closed" as const;
+  }
+
+  return "open" as const;
+}
 
 async function resolveSettlementPnl(trade: typeof tradesTable.$inferSelect) {
   if (trade.status === "open") {
@@ -57,7 +72,13 @@ router.get("/trades", async (req, res): Promise<void> => {
     filters.push(eq(tradesTable.walletAddress, walletAddress));
   }
   if (normalizedStatus && normalizedStatus !== "all") {
-    filters.push(eq(tradesTable.status, normalizedStatus));
+    if (normalizedStatus === "open") {
+      filters.push(eq(tradesTable.status, "open"));
+    } else if (normalizedStatus === "closed") {
+      filters.push(inArray(tradesTable.status, ["closed", "settled", "open"]));
+    } else {
+      filters.push(inArray(tradesTable.status, ["settled", "open"]));
+    }
   }
 
   const trades = await db
@@ -80,12 +101,30 @@ router.get("/trades", async (req, res): Promise<void> => {
   }
 
   const enrichedTrades = await attachLivePnl(trades);
-  const serialized = enrichedTrades.map((t) => ({
+  const normalizedTrades = enrichedTrades.map((trade) => {
+    const latestEvent = latestEventByTradeId.get(trade.id);
+    const derivedStatus = getDerivedTradeStatus(trade, latestEvent);
+
+    return {
+      ...trade,
+      status: derivedStatus,
+      chainTxHash: latestEvent?.txHash ?? trade.chainTxHash,
+      chainSettledAt: (trade.chainSettledAt ?? latestEvent?.createdAt)?.toISOString() ?? null,
+    };
+  });
+
+  const filteredNormalizedTrades = normalizedStatus === "open"
+    ? normalizedTrades.filter((trade) => trade.status === "open")
+    : normalizedStatus === "closed"
+      ? normalizedTrades.filter((trade) => trade.status === "closed" || trade.status === "settled")
+      : normalizedStatus === "settled"
+        ? normalizedTrades.filter((trade) => trade.status === "settled")
+        : normalizedTrades;
+
+  const serialized = filteredNormalizedTrades.map((t) => ({
     ...t,
-    chainTxHash: latestEventByTradeId.get(t.id)?.txHash ?? t.chainTxHash,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
-    chainSettledAt: t.chainSettledAt?.toISOString() ?? null,
   }));
   res.json(ListTradesResponse.parse(serialized));
 });
