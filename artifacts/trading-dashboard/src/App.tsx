@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
+import Markets from "@/pages/markets";
 import Trades from "@/pages/trades";
 import Chain from "@/pages/chain";
 import Agent from "@/pages/agent";
@@ -24,6 +25,7 @@ function Router() {
     <AppLayout>
       <Switch>
         <Route path="/" component={Dashboard} />
+        <Route path="/markets" component={Markets} />
         <Route path="/trades" component={Trades} />
         <Route path="/chain" component={Chain} />
         <Route path="/agent" component={Agent} />

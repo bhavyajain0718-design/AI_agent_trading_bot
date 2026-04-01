@@ -7,12 +7,9 @@ import {
   CreateAgentDecisionBody,
   GetAgentStatusResponse,
 } from "@workspace/api-zod";
+import { agentEngine } from "../lib/agent-engine";
 
 const router: IRouter = Router();
-
-// In-memory agent state — starts stopped so START is usable
-let agentState: "running" | "paused" | "stopped" = "stopped";
-let agentStartedAt: number | null = null;
 
 router.get("/agent/decisions", async (req, res): Promise<void> => {
   const limit = Number(req.query["limit"] ?? 20);
@@ -23,7 +20,7 @@ router.get("/agent/decisions", async (req, res): Promise<void> => {
     .orderBy(desc(agentDecisionsTable.createdAt))
     .limit(limit);
 
-  const serialized = decisions.map((d) => ({
+  const serialized = decisions.map((d: (typeof decisions)[number]) => ({
     ...d,
     createdAt: d.createdAt.toISOString(),
   }));
@@ -47,16 +44,12 @@ router.post("/agent/decisions", async (req, res): Promise<void> => {
 });
 
 router.get("/agent/status", async (_req, res): Promise<void> => {
-  const uptime =
-    agentState === "running" && agentStartedAt !== null
-      ? Math.floor((Date.now() - agentStartedAt) / 1000)
-      : 0;
-
+  const runtime = agentEngine.getStatus();
   const status = {
-    status: agentState,
-    strategy: "momentum",
-    uptime,
-    krakenConnected: true,
+    status: runtime.status,
+    strategy: runtime.strategy,
+    uptime: runtime.uptime,
+    krakenConnected: runtime.krakenConnected,
     web3Connected: !!process.env["CONTRACT_ADDRESS"],
     contractAddress: process.env["CONTRACT_ADDRESS"] ?? null,
     network: process.env["CHAIN_NETWORK"] ?? "anvil-local",
@@ -74,26 +67,15 @@ router.patch("/agent/status", (req, res): void => {
     return;
   }
 
-  const prev = agentState;
-  agentState = requested as AgentStateType;
-
-  if (agentState === "running" && prev !== "running") {
-    agentStartedAt = Date.now();
-  } else if (agentState === "stopped") {
-    agentStartedAt = null;
-  }
-
-  const uptime =
-    agentState === "running" && agentStartedAt !== null
-      ? Math.floor((Date.now() - agentStartedAt) / 1000)
-      : 0;
+  agentEngine.setState(requested as AgentStateType);
+  const runtime = agentEngine.getStatus();
 
   res.json(
     GetAgentStatusResponse.parse({
-      status: agentState,
-      strategy: "momentum",
-      uptime,
-      krakenConnected: true,
+      status: runtime.status,
+      strategy: runtime.strategy,
+      uptime: runtime.uptime,
+      krakenConnected: runtime.krakenConnected,
       web3Connected: !!process.env["CONTRACT_ADDRESS"],
       contractAddress: process.env["CONTRACT_ADDRESS"] ?? null,
       network: process.env["CHAIN_NETWORK"] ?? "anvil-local",

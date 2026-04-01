@@ -4,6 +4,7 @@ import tradesRouter from "./trades";
 import portfolioRouter from "./portfolio";
 import agentRouter from "./agent";
 import chainRouter from "./chain";
+import marketRouter from "./market";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(tradesRouter);
 router.use(portfolioRouter);
 router.use(agentRouter);
 router.use(chainRouter);
+router.use(marketRouter);
 
 export default router;

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Activity, LayoutDashboard, ListTree, BoxSelect, Cpu } from "lucide-react";
+import { Activity, LayoutDashboard, ListTree, BoxSelect, Cpu, ChartCandlestick } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Ticker } from "./ticker";
 import { useHealthCheck } from "@workspace/api-client-react";
@@ -10,6 +10,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/markets", label: "Markets", icon: ChartCandlestick },
     { href: "/trades", label: "Trades", icon: ListTree },
     { href: "/chain", label: "Web3 Settlement", icon: BoxSelect },
     { href: "/agent", label: "Agent Control", icon: Cpu },

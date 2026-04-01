@@ -1,4 +1,5 @@
 import app from "./app";
+import { agentEngine } from "./lib/agent-engine";
 import { logger } from "./lib/logger";
 
 const rawPort = process.env["PORT"];
@@ -14,6 +15,9 @@ const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
+
+// Keep the engine initialized in-process; it will only begin polling when the user starts it.
+void agentEngine;
 
 app.listen(port, (err) => {
   if (err) {
