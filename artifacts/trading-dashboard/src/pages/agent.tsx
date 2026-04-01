@@ -50,7 +50,7 @@ async function patchAgentTimeframe(timeframe: string, status: "running" | "pause
 export default function Agent() {
   const { connectedWallet } = useWallet();
   const queryClient = useQueryClient();
-  const { data: status, isLoading: loadingStatus } = useQuery({
+  const { data: status, isLoading: loadingStatus, isError: statusError } = useQuery({
     queryKey: ["/api/agent/status", connectedWallet],
     enabled: Boolean(connectedWallet),
     refetchInterval: 3000,
@@ -62,7 +62,7 @@ export default function Agent() {
       return response.json();
     },
   });
-  const { data: decisions, isLoading: loadingDecisions } = useQuery({
+  const { data: decisions, isLoading: loadingDecisions, isError: decisionsError } = useQuery({
     queryKey: ["/api/agent/decisions", connectedWallet],
     enabled: Boolean(connectedWallet),
     refetchInterval: 5000,
@@ -236,6 +236,11 @@ export default function Agent() {
               )}>
                 {loadingStatus ? <Skeleton className="h-5 w-20" /> : currentState}
               </div>
+              {statusError ? (
+                <div className="mt-2 font-mono text-[10px] uppercase text-destructive">
+                  status feed unavailable
+                </div>
+              ) : null}
             </div>
 
             <div>
@@ -314,6 +319,10 @@ export default function Agent() {
               {loadingDecisions ? (
                 <div className="p-6 space-y-4">
                   {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full" />)}
+                </div>
+              ) : decisionsError ? (
+                <div className="p-10 text-center font-mono text-destructive text-sm">
+                  DECISION FEED UNAVAILABLE
                 </div>
               ) : recentDecisions.length === 0 ? (
                 <div className="p-10 text-center font-mono text-muted-foreground text-sm">
